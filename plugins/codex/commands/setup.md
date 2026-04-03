@@ -1,37 +1,59 @@
 ---
-description: Check whether the local Codex CLI is ready and optionally toggle the stop-time review gate
-argument-hint: '[--enable-review-gate|--disable-review-gate]'
-allowed-tools: Bash(node:*), Bash(npm:*), AskUserQuestion
+description: Check whether Node and Codex are ready, and optionally configure review hooks
+allowed-tools: Bash(node:*), Bash(npm:*)
 ---
 
-Run:
+Output of `codex-companion setup --json`:
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json $ARGUMENTS
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json 2>&1 || echo '{"error": true}'`
+
+---
+
+Use the output above to determine the current state. The JSON includes `ready` (boolean), `node.available`, `npm.available`, `codex.available`, `auth.loggedIn`, and `nextSteps`.
+
+Follow the first matching path:
+
+**If the output has `"error": true` or `node.available` is false:**
+Tell the user to install Node.js 18.18+ and rerun `/codex:setup`.
+
+**If `codex.available` is false and `npm.available` is true:**
+Use `AskUserQuestion` with options: `Install Codex (Recommended)`, `Skip for now`
+- If install: run `npm install -g @openai/codex`, then rerun `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json` and present the updated result.
+- If skip: present the setup output and stop.
+
+**If `codex.available` is false and `npm.available` is false:**
+Tell the user to install npm (or install Codex manually with `npm install -g @openai/codex`) and rerun `/codex:setup`.
+
+**If `auth.loggedIn` is false:**
+Tell the user to run `!codex login` and then rerun `/codex:setup`.
+
+**If `ready` is true:**
+
+Present the setup status to the user.
+
+Check `.claude/settings.local.json` for existing codex-companion permission rules. If not already present, tell the user you're adding read-only permissions for codex-companion, then add these to `permissions.allow` (merge, do not overwrite existing rules):
+
+```
+"Bash(codex-companion)", "Bash(codex-companion help)", "Bash(codex-companion help *)",
+"Bash(codex-companion review)", "Bash(codex-companion review *)",
+"Bash(codex-companion adversarial-review)", "Bash(codex-companion adversarial-review *)",
+"Bash(codex-companion plan-review *)",
+"Bash(codex-companion status)", "Bash(codex-companion status *)",
+"Bash(codex-companion result)", "Bash(codex-companion result *)",
+"Bash(codex-companion cancel)", "Bash(codex-companion cancel *)"
 ```
 
-If the result says Codex is unavailable and npm is available:
-- Use `AskUserQuestion` exactly once to ask whether Claude should install Codex now.
-- Put the install option first and suffix it with `(Recommended)`.
-- Use these two options:
-  - `Install Codex (Recommended)`
-  - `Skip for now`
-- If the user chooses install, run:
+Then check if codex review hooks are already configured in `.claude/settings.local.json` (look for PreToolUse hooks referencing codex-companion or plan-review). If hooks already exist, tell the user hooks are already configured and ask if they want to reconfigure. If not configured (or user wants to reconfigure):
 
-```bash
-npm install -g @openai/codex
-```
+Output this pitch:
 
-- Then rerun:
+> **Review hooks** let Claude automatically get Codex feedback at key moments — when writing a plan, running /simplify, or before committing code.
+>
+> Without hooks, Codex reviews only happen when you or Claude explicitly request them. This gives you full control but means more manual involvement — you'll need to remember to ask for reviews at the right times.
+>
+> With hooks, Claude can get a second opinion from Codex autonomously, iterating on feedback without needing your input. This enables greater autonomy — you can step away while Claude perfects a plan or polishes code. The tradeoff is runtime: waiting for Codex reviews and iterations adds time to each cycle.
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json $ARGUMENTS
-```
+Use `AskUserQuestion` with options: `Configure review hooks (Recommended)`, `Skip for now`
 
-If Codex is already installed or npm is unavailable:
-- Do not ask about installation.
-
-Output rules:
-- Present the final setup output to the user.
-- If installation was skipped, present the original setup output.
-- If Codex is installed but not authenticated, preserve the guidance to run `!codex login`.
+If the user chooses to configure: load the `codex:hook-setup` skill.
+If the user chooses to skip: tell them they can ask to set up review hooks anytime.

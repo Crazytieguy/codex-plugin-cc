@@ -26,9 +26,7 @@ import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
 import { loadPromptTemplate, interpolateTemplate } from "./lib/prompts.mjs";
 import {
   generateJobId,
-  getConfig,
   listJobs,
-  setConfig,
   upsertJob,
   writeJobFile
 } from "./lib/state.mjs";
@@ -68,21 +66,11 @@ const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
 const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
 const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
-const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
+
+import { getUsageText, getCommandHelp } from "./lib/help.mjs";
 
 function printUsage() {
-  console.log(
-    [
-      "Usage:",
-      "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
-      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>]",
-      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [focus text]",
-      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
-      "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
-      "  node scripts/codex-companion.mjs result [job-id] [--json]",
-      "  node scripts/codex-companion.mjs cancel [job-id] [--json]"
-    ].join("\n")
-  );
+  console.log(getUsageText());
 }
 
 function outputResult(value, asJson) {
@@ -177,12 +165,10 @@ function firstMeaningfulLine(text, fallback) {
 }
 
 function buildSetupReport(cwd, actionsTaken = []) {
-  const workspaceRoot = resolveWorkspaceRoot(cwd);
   const nodeStatus = binaryAvailable("node", ["--version"], { cwd });
   const npmStatus = binaryAvailable("npm", ["--version"], { cwd });
   const codexStatus = getCodexAvailability(cwd);
   const authStatus = getCodexLoginStatus(cwd);
-  const config = getConfig(workspaceRoot);
 
   const nextSteps = [];
   if (!codexStatus.available) {
@@ -192,8 +178,8 @@ function buildSetupReport(cwd, actionsTaken = []) {
     nextSteps.push("Run `!codex login`.");
     nextSteps.push("If browser login is blocked, retry with `!codex login --device-auth` or `!codex login --with-api-key`.");
   }
-  if (!config.stopReviewGate) {
-    nextSteps.push("Optional: run `/codex:setup --enable-review-gate` to require a fresh review before stop.");
+  if (!nodeStatus.available || !codexStatus.available || !authStatus.loggedIn) {
+    nextSteps.push("Run `/codex:setup` after resolving the above.");
   }
 
   return {
@@ -203,7 +189,6 @@ function buildSetupReport(cwd, actionsTaken = []) {
     codex: codexStatus,
     auth: authStatus,
     sessionRuntime: getSessionRuntimeStatus(),
-    reviewGateEnabled: Boolean(config.stopReviewGate),
     actionsTaken,
     nextSteps
   };
@@ -212,24 +197,11 @@ function buildSetupReport(cwd, actionsTaken = []) {
 function handleSetup(argv) {
   const { options } = parseCommandInput(argv, {
     valueOptions: ["cwd"],
-    booleanOptions: ["json", "enable-review-gate", "disable-review-gate"]
+    booleanOptions: ["json"]
   });
 
-  if (options["enable-review-gate"] && options["disable-review-gate"]) {
-    throw new Error("Choose either --enable-review-gate or --disable-review-gate.");
-  }
-
   const cwd = resolveCommandCwd(options);
-  const workspaceRoot = resolveCommandWorkspace(options);
   const actionsTaken = [];
-
-  if (options["enable-review-gate"]) {
-    setConfig(workspaceRoot, "stopReviewGate", true);
-    actionsTaken.push(`Enabled the stop-time review gate for ${workspaceRoot}.`);
-  } else if (options["disable-review-gate"]) {
-    setConfig(workspaceRoot, "stopReviewGate", false);
-    actionsTaken.push(`Disabled the stop-time review gate for ${workspaceRoot}.`);
-  }
 
   const finalReport = buildSetupReport(cwd, actionsTaken);
   outputResult(options.json ? finalReport : renderSetupReport(finalReport), options.json);
@@ -270,13 +242,13 @@ function buildNativeReviewTarget(target) {
 function validateNativeReviewRequest(target, focusText) {
   if (focusText.trim()) {
     throw new Error(
-      `\`/codex:review\` now maps directly to the built-in reviewer and does not support custom focus text. Retry with \`/codex:adversarial-review ${focusText.trim()}\` for focused review instructions.`
+      `\`codex-companion review\` uses the built-in reviewer and does not support custom focus text. Use \`codex-companion adversarial-review ${focusText.trim()}\` for focused review instructions.`
     );
   }
 
   const nativeTarget = buildNativeReviewTarget(target);
   if (!nativeTarget) {
-    throw new Error("This `/codex:review` target is not supported by the built-in reviewer. Retry with `/codex:adversarial-review` for custom targeting.");
+    throw new Error("This review target is not supported by the built-in reviewer. Use `codex-companion adversarial-review` for custom targeting.");
   }
 
   return nativeTarget;
@@ -313,7 +285,7 @@ async function resolveLatestTrackedTaskThread(cwd, options = {}) {
   const jobs = sortJobsNewestFirst(listJobs(workspaceRoot)).filter((job) => job.id !== options.excludeJobId);
   const activeTask = jobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
   if (activeTask) {
-    throw new Error(`Task ${activeTask.id} is still running. Use /codex:status before continuing it.`);
+    throw new Error(`Task ${activeTask.id} is still running. Use codex-companion status before continuing it.`);
   }
 
   const trackedTask = jobs.find((job) => job.jobClass === "task" && job.status === "completed" && job.threadId);
@@ -507,13 +479,6 @@ function buildReviewJobMetadata(reviewName, target) {
 }
 
 function buildTaskRunMetadata({ prompt, resumeLast = false }) {
-  if (!resumeLast && String(prompt ?? "").includes(STOP_REVIEW_TASK_MARKER)) {
-    return {
-      title: "Codex Stop Gate Review",
-      summary: "Stop-gate review of previous Claude turn"
-    };
-  }
-
   const title = resumeLast ? "Codex Resume" : "Codex Task";
   const fallbackSummary = resumeLast ? DEFAULT_CONTINUE_PROMPT : "Task";
   return {
@@ -523,14 +488,14 @@ function buildTaskRunMetadata({ prompt, resumeLast = false }) {
 }
 
 function renderQueuedTaskLaunch(payload) {
-  return `${payload.title} started in the background as ${payload.jobId}. Check /codex:status ${payload.jobId} for progress.\n`;
+  return `${payload.title} started in the background as ${payload.jobId}. Check codex-companion status ${payload.jobId} for progress.\n`;
 }
 
 function getJobKindLabel(kind, jobClass) {
   if (kind === "adversarial-review") {
     return "adversarial-review";
   }
-  return jobClass === "review" ? "review" : "rescue";
+  return jobClass === "review" ? "review" : "task";
 }
 
 function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summary, write = false }) {
@@ -651,10 +616,102 @@ function enqueueBackgroundTask(cwd, job, request) {
   };
 }
 
+function buildPlanReviewPrompt(planFile, planContent) {
+  const template = loadPromptTemplate(ROOT_DIR, "plan-review");
+  return interpolateTemplate(template, {
+    PLAN_CONTENT: planContent
+  });
+}
+
+async function executePlanReviewRun(request) {
+  ensureCodexReady(request.cwd);
+
+  const workspaceRoot = resolveWorkspaceRoot(request.cwd);
+  const prompt = buildPlanReviewPrompt(request.planFile, request.planContent);
+  const result = await runAppServerTurn(workspaceRoot, {
+    prompt,
+    model: request.model,
+    sandbox: "read-only",
+    onProgress: request.onProgress
+  });
+
+  const rawOutput = typeof result.finalMessage === "string" ? result.finalMessage : "";
+  const failureMessage = result.error?.message ?? result.stderr ?? "";
+  const rendered = renderTaskResult({
+    rawOutput,
+    failureMessage
+  });
+
+  return {
+    exitStatus: result.status,
+    threadId: result.threadId,
+    turnId: result.turnId,
+    payload: {
+      planFile: request.planFile,
+      status: result.status,
+      threadId: result.threadId,
+      rawOutput,
+      reasoningSummary: result.reasoningSummary
+    },
+    rendered,
+    summary: firstMeaningfulLine(rawOutput, "Plan review finished."),
+    jobTitle: "Codex Plan Review",
+    jobClass: "review"
+  };
+}
+
+async function handlePlanReview(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["model", "cwd"],
+    aliasMap: {
+      m: "model"
+    }
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const planFile = positionals[0];
+  if (!planFile) {
+    throw new Error("Provide a plan file path: codex-companion plan-review <file>");
+  }
+
+  const resolvedPath = path.resolve(cwd, planFile);
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(`Plan file not found: ${resolvedPath}`);
+  }
+
+  const planContent = fs.readFileSync(resolvedPath, "utf8").trim();
+  if (!planContent) {
+    throw new Error(`Plan file is empty: ${resolvedPath}`);
+  }
+
+  const model = normalizeRequestedModel(options.model);
+  const job = createCompanionJob({
+    prefix: "plan-review",
+    kind: "plan-review",
+    title: "Codex Plan Review",
+    workspaceRoot,
+    jobClass: "review",
+    summary: `Plan review of ${path.basename(resolvedPath)}`
+  });
+
+  await runForegroundCommand(
+    job,
+    (progress) =>
+      executePlanReviewRun({
+        cwd,
+        model,
+        planFile: resolvedPath,
+        planContent,
+        onProgress: progress
+      })
+  );
+}
+
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json", "background", "wait"],
+    booleanOptions: ["json"],
     aliasMap: {
       m: "model"
     }
@@ -960,7 +1017,21 @@ async function handleCancel(argv) {
 
 async function main() {
   const [subcommand, ...argv] = process.argv.slice(2);
-  if (!subcommand || subcommand === "help" || subcommand === "--help") {
+  if (!subcommand || subcommand === "--help") {
+    printUsage();
+    return;
+  }
+
+  if (subcommand === "help") {
+    const helpTarget = argv[0];
+    if (helpTarget) {
+      const cmdHelp = getCommandHelp(helpTarget);
+      if (cmdHelp) {
+        console.log(cmdHelp);
+        return;
+      }
+      throw new Error(`Unknown command: ${helpTarget}. Run codex-companion help for available commands.`);
+    }
     printUsage();
     return;
   }
@@ -976,6 +1047,9 @@ async function main() {
       await handleReviewCommand(argv, {
         reviewName: "Adversarial Review"
       });
+      break;
+    case "plan-review":
+      await handlePlanReview(argv);
       break;
     case "task":
       await handleTask(argv);

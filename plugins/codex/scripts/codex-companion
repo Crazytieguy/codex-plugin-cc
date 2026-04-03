@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export CLAUDE_PLUGIN_DATA="${CODEX_COMPANION_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-}}"
+exec node "${SCRIPT_DIR}/codex-companion.mjs" "$@"
