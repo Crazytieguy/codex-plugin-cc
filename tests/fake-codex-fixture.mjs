@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { writeExecutable } from "./helpers.mjs";
+import { writeExecutable, cleanEnv } from "./helpers.mjs";
 
 export function installFakeCodex(binDir, behavior = "review-ok") {
   const statePath = path.join(binDir, "fake-codex-state.json");
@@ -520,8 +520,7 @@ rl.on("line", (line) => {
 
 export function buildEnv(binDir) {
   const sep = process.platform === "win32" ? ";" : ":";
-  return {
-    ...process.env,
+  return cleanEnv({
     PATH: `${binDir}${sep}${process.env.PATH}`
-  };
+  });
 }

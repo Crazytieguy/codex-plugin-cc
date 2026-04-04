@@ -23,6 +23,18 @@ export function run(command, args, options = {}) {
   });
 }
 
+/**
+ * Return a copy of process.env without CODEX_COMPANION_* variables that leak
+ * from a live Claude Code session into child processes and break test isolation.
+ */
+export function cleanEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("CODEX_COMPANION_")) delete env[key];
+  }
+  return env;
+}
+
 export function initGitRepo(cwd) {
   run("git", ["init", "-b", "main"], { cwd });
   run("git", ["config", "user.name", "Codex Plugin Tests"], { cwd });

@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { buildEnv, installFakeCodex } from "./fake-codex-fixture.mjs";
-import { initGitRepo, makeTempDir, run } from "./helpers.mjs";
+import { cleanEnv, initGitRepo, makeTempDir, run } from "./helpers.mjs";
 import { loadBrokerSession } from "../plugins/codex/scripts/lib/broker-lifecycle.mjs";
 import { resolveStateDir } from "../plugins/codex/scripts/lib/state.mjs";
 
@@ -28,11 +28,13 @@ async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 50 } = {}) {
 }
 
 test("setup reports ready when fake codex is installed and authenticated", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir);
+  initGitRepo(repo);
 
   const result = run("node", [SCRIPT, "setup", "--json"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
@@ -44,16 +46,15 @@ test("setup reports ready when fake codex is installed and authenticated", () =>
 });
 
 test("setup is ready without npm when Codex is already installed and authenticated", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir);
+  initGitRepo(repo);
   fs.symlinkSync(process.execPath, path.join(binDir, "node"));
 
   const result = run("node", [SCRIPT, "setup", "--json"], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      PATH: binDir
-    }
+    cwd: repo,
+    env: cleanEnv({ PATH: binDir })
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -157,7 +158,7 @@ test("review includes reasoning output when the app server returns it", () => {
   run("git", ["commit", "-m", "init"], { cwd: repo });
   fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
 
-  const result = run("node", [SCRIPT, "review"], {
+  const result = run("node", [SCRIPT, "review", "--include-reasoning"], {
     cwd: repo,
     env: buildEnv(binDir)
   });
@@ -721,7 +722,8 @@ test("status shows phases, hints, and the latest finished job", () => {
   );
 
   const result = run("node", [SCRIPT, "status"], {
-    cwd: workspace
+    cwd: workspace,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -865,7 +867,8 @@ test("status preserves adversarial review kind labels", () => {
   );
 
   const result = run("node", [SCRIPT, "status"], {
-    cwd: workspace
+    cwd: workspace,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -988,7 +991,8 @@ test("result returns the stored output for the latest finished job by default", 
   );
 
   const result = run("node", [SCRIPT, "result"], {
-    cwd: workspace
+    cwd: workspace,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);

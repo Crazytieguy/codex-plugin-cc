@@ -1,17 +1,8 @@
 # Codex plugin for Claude Code
 
-Use Codex from inside Claude Code for code reviews, plan reviews, and task delegation.
-
-## Motivation
-
-Codex is good at focused review and investigation tasks. Claude Code is good at orchestrating multi-step workflows. This plugin connects them: Claude can call Codex for a second opinion on code or plans, delegate investigation tasks, or run adversarial reviews — all without leaving the Claude Code session.
+AI models from different providers tend to have uncorrelated failure modes, making cross-model review effective at catching issues that self-review misses. Many users have found Codex particularly effective at reviewing Claude's work. This plugin connects them: Claude can delegate tasks to Codex, run adversarial reviews on code and plans, and iterate on the feedback autonomously.
 
 This is a fork of [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) with a focus on giving Claude and the user more control over when and how Codex is invoked, through composable hooks and a simpler CLI interface.
-
-## Requirements
-
-- **ChatGPT subscription (incl. Free) or OpenAI API key** — usage counts toward your [Codex limits](https://developers.openai.com/codex/pricing)
-- **Node.js 18.18 or later**
 
 ## Install
 
