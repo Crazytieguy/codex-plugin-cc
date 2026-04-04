@@ -1,52 +1,20 @@
 #!/usr/bin/env node
 // PreToolUse enforcement: block ExitPlanMode until a plan-review has completed in this session.
-// Hook config: matcher "ExitPlanMode" (no if needed)
+// Hook config: matcher "ExitPlanMode", wrapped by run-with-session-env.sh
 
 import fs from "node:fs";
-import { execSync } from "node:child_process";
+import { deny, fetchSessionJobs } from "./lib/hook-helpers.mjs";
 
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 
-// Get session ID from env (set via CLAUDE_ENV_FILE) or from hook input
-const sessionId =
-  process.env.CODEX_COMPANION_SESSION_ID || input.session_id || "";
-
-function deny(reason) {
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: reason
-    }
-  };
-  process.stdout.write(JSON.stringify(output) + "\n");
-}
-
-let statusData;
-try {
-  const raw = execSync("codex-companion status --all --json", {
-    encoding: "utf8",
-    timeout: 10000
-  });
-  statusData = JSON.parse(raw);
-} catch {
+const allJobs = fetchSessionJobs();
+if (!allJobs) {
+  // codex-companion unavailable — fail open
   process.exit(0);
 }
 
-// Collect all jobs from the status response
-const allJobs = [
-  ...(statusData.running ?? []),
-  ...(statusData.recent ?? []),
-  ...(statusData.latestFinished ? [statusData.latestFinished] : [])
-];
-
-// Filter to this session if we have a session ID
-const sessionJobs = sessionId
-  ? allJobs.filter((job) => job.sessionId === sessionId)
-  : allJobs;
-
 // Check if a plan-review is currently running
-const runningPlanReview = sessionJobs.find(
+const runningPlanReview = allJobs.find(
   (job) =>
     job.kind === "plan-review" &&
     (job.status === "queued" || job.status === "running")
@@ -59,8 +27,8 @@ if (runningPlanReview) {
   process.exit(0);
 }
 
-// Check if a plan-review has completed in this session
-const completedPlanReview = sessionJobs.find(
+// Check if a plan-review has completed
+const completedPlanReview = allJobs.find(
   (job) => job.kind === "plan-review" && job.status === "completed"
 );
 

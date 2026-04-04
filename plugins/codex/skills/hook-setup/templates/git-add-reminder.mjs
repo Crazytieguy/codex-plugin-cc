@@ -4,8 +4,13 @@
 
 import fs from "node:fs";
 
-// Drain stdin (required by hook protocol)
-fs.readFileSync(0, "utf8");
+const input = JSON.parse(fs.readFileSync(0, "utf8"));
+
+// Self-validate: exit early if this isn't actually a git add command
+const command = input.tool_input?.command ?? "";
+if (!command.match(/^git\s+add\b/)) {
+  process.exit(0);
+}
 
 const output = {
   hookSpecificOutput: {

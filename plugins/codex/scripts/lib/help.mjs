@@ -4,14 +4,16 @@ export function getUsageText() {
 Review commands:
 
   review [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--json]
+         [--include-stderr] [--include-reasoning]
     Comprehensive code review via Codex's built-in reviewer. Slower, thorough.
     Defaults to uncommitted changes; --base <ref> for branch review. Read-only.
 
-  adversarial-review [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--json] [focus text]
+  adversarial-review [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--json]
+                     [--include-stderr] [--include-reasoning] [focus text]
     Targeted review challenging design choices, tradeoffs, and assumptions.
     Faster than review. Optional focus text steers the critique. Read-only.
 
-  plan-review <file> [--model <model>]
+  plan-review <file> [--model <model>] [--include-stderr]
     Adversarial review of a plan file. Codex reads plan content and inspects referenced files.
     Use before exiting plan mode.
 
@@ -28,6 +30,41 @@ Other commands (run codex-companion help <command> for details):
 
 export function getCommandHelp(command) {
   const commands = {
+    review: `codex-companion review [options]
+
+Comprehensive code review via Codex's built-in reviewer. Slower, thorough.
+Defaults to uncommitted changes; --base <ref> for branch review. Read-only.
+
+Options:
+  --base <ref>         Base ref for branch diff (e.g. main, HEAD~3).
+  --scope <mode>       auto, working-tree, or branch.
+  --model <model>      Choose a model.
+  --include-stderr     Show Codex progress on stderr while running.
+  --include-reasoning  Include reasoning summary in output.
+  --json               Output structured JSON.`,
+
+    "adversarial-review": `codex-companion adversarial-review [options] [focus text]
+
+Targeted review challenging design choices, tradeoffs, and assumptions.
+Faster than review. Optional focus text steers the critique. Read-only.
+
+Options:
+  --base <ref>         Base ref for branch diff (e.g. main, HEAD~3).
+  --scope <mode>       auto, working-tree, or branch.
+  --model <model>      Choose a model.
+  --include-stderr     Show Codex progress on stderr while running.
+  --include-reasoning  Include reasoning summary in output.
+  --json               Output structured JSON.`,
+
+    "plan-review": `codex-companion plan-review <file> [options]
+
+Adversarial review of a plan file. Codex reads plan content and inspects
+referenced files. Use before exiting plan mode.
+
+Options:
+  --model <model>      Choose a model.
+  --include-stderr     Show Codex progress on stderr while running.`,
+
     task: `codex-companion task [options] [prompt]
 
 Delegate a task to Codex: investigation, diagnosis, implementation, research.
@@ -42,6 +79,7 @@ Options:
                      Use "spark" for gpt-5.3-codex-spark.
   --effort <level>   Reasoning effort: none, minimal, low, medium, high, xhigh.
   --prompt-file <path>  Read task prompt from a file.
+  --include-stderr   Show Codex progress on stderr while running.
   --json             Output structured JSON.`,
 
     status: `codex-companion status [job-id] [options]

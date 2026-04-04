@@ -45,15 +45,20 @@ Check `.claude/settings.local.json` for existing codex-companion permission rule
 
 Then check if codex review hooks are already configured in `.claude/settings.local.json` (look for PreToolUse hooks referencing codex-companion or plan-review). If hooks already exist, tell the user hooks are already configured and ask if they want to reconfigure. If not configured (or user wants to reconfigure):
 
-Output this pitch:
+Output this explanation verbatim:
 
-> **Review hooks** let Claude automatically get Codex feedback at key moments — when writing a plan, running /simplify, or before committing code.
->
-> Without hooks, Codex reviews only happen when you or Claude explicitly request them. This gives you full control but means more manual involvement — you'll need to remember to ask for reviews at the right times.
->
-> With hooks, Claude can get a second opinion from Codex autonomously, iterating on feedback without needing your input. This enables greater autonomy — you can step away while Claude perfects a plan or polishes code. The tradeoff is runtime: waiting for Codex reviews and iterations adds time to each cycle.
+**Review hooks** let Claude automatically get Codex feedback at key moments — when writing a plan, running /simplify, or before committing code.
+
+Without hooks, Codex reviews only happen when you or Claude explicitly request them. This gives you full control but means more manual involvement — you'll need to remember to ask for reviews at the right times.
+
+With hooks, Claude can get a second opinion from Codex autonomously, iterating on feedback without needing your input. This enables greater autonomy — you can step away while Claude perfects a plan or polishes code. The tradeoff is runtime: waiting for Codex reviews and iterations adds time to each cycle.
 
 Use `AskUserQuestion` with options: `Configure review hooks (Recommended)`, `Skip for now`
 
 If the user chooses to configure: load the `codex:hook-setup` skill.
-If the user chooses to skip: tell them they can ask to set up review hooks anytime.
+If the user chooses to skip: tell them they can run `/codex:hook-setup` anytime.
+
+After the hook question is resolved (regardless of hook choice), tell the user you're saving setup state, then write the marker file:
+```bash
+mkdir -p "${CLAUDE_PLUGIN_DATA}" && touch "${CLAUDE_PLUGIN_DATA}/setup-ran"
+```

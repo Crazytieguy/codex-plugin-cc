@@ -331,7 +331,7 @@ async function executeReviewRun(request) {
         stdout: result.reviewText,
         stderr: result.stderr
       },
-      { reviewLabel: reviewName, targetLabel: target.label, reasoningSummary: result.reasoningSummary }
+      { reviewLabel: reviewName, targetLabel: target.label, reasoningSummary: request.includeReasoning ? result.reasoningSummary : [] }
     );
 
     return {
@@ -389,7 +389,7 @@ async function executeReviewRun(request) {
     rendered: renderReviewResult(parsed, {
       reviewLabel: reviewName,
       targetLabel: context.target.label,
-      reasoningSummary: result.reasoningSummary
+      reasoningSummary: request.includeReasoning ? result.reasoningSummary : []
     }),
     summary: parsed.parsed?.summary ?? parsed.parseError ?? firstMeaningfulLine(result.finalMessage, `${reviewName} finished.`),
     jobTitle: `Codex ${reviewName}`,
@@ -563,9 +563,12 @@ function requireTaskRequest(prompt, resumeLast) {
 }
 
 async function runForegroundCommand(job, runner, options = {}) {
+  if (options.includeStderr && options.json) {
+    throw new Error("--include-stderr and --json are incompatible.");
+  }
   const { logFile, progress } = createTrackedProgress(job, {
     logFile: options.logFile,
-    stderr: !options.json
+    stderr: Boolean(options.includeStderr)
   });
   const execution = await runTrackedJob(job, () => runner(progress), { logFile });
   outputResult(options.json ? execution.payload : execution.rendered, options.json);
@@ -663,6 +666,7 @@ async function executePlanReviewRun(request) {
 async function handlePlanReview(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "cwd"],
+    booleanOptions: ["include-stderr"],
     aliasMap: {
       m: "model"
     }
@@ -704,14 +708,15 @@ async function handlePlanReview(argv) {
         planFile: resolvedPath,
         planContent,
         onProgress: progress
-      })
+      }),
+    { includeStderr: options["include-stderr"] }
   );
 }
 
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json"],
+    booleanOptions: ["json", "include-stderr", "include-reasoning"],
     aliasMap: {
       m: "model"
     }
@@ -745,9 +750,10 @@ async function handleReviewCommand(argv, config) {
         model: options.model,
         focusText,
         reviewName: config.reviewName,
+        includeReasoning: Boolean(options["include-reasoning"]),
         onProgress: progress
       }),
-    { json: options.json }
+    { json: options.json, includeStderr: options["include-stderr"] }
   );
 }
 
@@ -761,7 +767,7 @@ async function handleReview(argv) {
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "cwd", "prompt-file"],
-    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
+    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background", "include-stderr"],
     aliasMap: {
       m: "model"
     }
@@ -817,7 +823,7 @@ async function handleTask(argv) {
         jobId: job.id,
         onProgress: progress
       }),
-    { json: options.json }
+    { json: options.json, includeStderr: options["include-stderr"] }
   );
 }
 

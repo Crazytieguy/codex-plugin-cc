@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // PreToolUse reminder: when invoking the simplify skill, remind to also run
 // a codex adversarial-review in the background alongside the other review agents.
-// Hook config: matcher "Skill", if "Skill(simplify)"
+// Hook config: matcher "Skill" (no `if` — Skill(simplify) pattern doesn't work)
 
 import fs from "node:fs";
 
-// Drain stdin (required by hook protocol)
-fs.readFileSync(0, "utf8");
+const input = JSON.parse(fs.readFileSync(0, "utf8"));
+
+// Self-validate: only fire for the simplify skill
+const skill = input.tool_input?.skill ?? "";
+if (skill !== "simplify") {
+  process.exit(0);
+}
 
 const output = {
   hookSpecificOutput: {

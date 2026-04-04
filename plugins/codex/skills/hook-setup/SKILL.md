@@ -34,7 +34,7 @@ Use `AskUserQuestion` with multiSelect:
 - **Code on /simplify**
 - **Code before commit**
 
-If the user provides a custom answer instead of selecting options, use the templates as inspiration to build a hook matching their request. Check the Claude Code hooks documentation for the correct syntax, and offer to test live — hooks in `settings.local.json` hot-reload without restart (but if `codex-companion` is not yet on PATH, a new session is needed first).
+If the user provides a custom answer instead of selecting options, use the templates as inspiration to build a hook matching their request. Check the Claude Code hooks documentation for the correct syntax, and offer to test live — new hooks in `settings.local.json` require a session restart to take effect.
 
 ### Step 2: Enforcement Level
 
@@ -55,6 +55,8 @@ Use `AskUserQuestion` with single select:
 
 Based on selections, copy the appropriate template scripts from `templates/` to the project's `.claude/scripts/` directory. Create the directory and add a `.gitignore` with `*` if it doesn't exist. Only modify the scripts if the user requested something custom.
 
+**Always copy `templates/lib/` to `.claude/scripts/lib/` as well** — it contains `run-with-session-env.sh` (a wrapper that sources Claude Code session environment variables before running hook scripts) and `hook-helpers.mjs` (shared utilities used by enforcement scripts). Enforcement hooks require the wrapper to access `codex-companion`.
+
 Then add hook entries to `.claude/settings.local.json` under the `hooks` key, pointing to the copied scripts.
 
 **Template mapping:**
@@ -67,7 +69,7 @@ Then add hook entries to `.claude/settings.local.json` under the `hooks` key, po
 
 #### Settings Format
 
-Hooks in `.claude/settings.local.json` use the direct format (no wrapper):
+Enforcement hooks that call `codex-companion` must be wrapped by `run-with-session-env.sh`. Reminder-only hooks that don't call `codex-companion` can use the direct format.
 
 ```json
 {
@@ -78,9 +80,46 @@ Hooks in `.claude/settings.local.json` use the direct format (no wrapper):
         "hooks": [
           {
             "type": "command",
-            "if": "Write(~/.claude/plans/*)",
+            "if": "Write(*/.claude/plans/*.md)",
             "command": "node .claude/scripts/plan-write-reminder.mjs",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/lib/run-with-session-env.sh .claude/scripts/exit-plan-mode-enforce.mjs",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/scripts/simplify-reminder.mjs",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git add *)",
+            "command": "node .claude/scripts/git-add-reminder.mjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "if": "Bash(git commit:*)",
+            "command": "bash .claude/scripts/lib/run-with-session-env.sh .claude/scripts/git-commit-enforce.mjs",
+            "timeout": 15
           }
         ]
       }
@@ -91,11 +130,13 @@ Hooks in `.claude/settings.local.json` use the direct format (no wrapper):
 
 #### Hook `if` Patterns
 
-- `"if": "Write(~/.claude/plans/*)"` — Write to plan files
-- `"if": "Skill(simplify)"` — /simplify skill invocation
+- `"if": "Write(*/.claude/plans/*.md)"` — Write to plan files
+- `"matcher": "Skill"` — Skill invocations (no `if` — `Skill(simplify)` pattern doesn't work; use self-validation in the script instead)
 - `"if": "Bash(git add *)"` — git add commands
 - `"if": "Bash(git commit:*)"` — git commit commands (`:*` for heredoc compatibility)
 - `"matcher": "ExitPlanMode"` — ExitPlanMode (no `if` needed, matcher suffices)
+
+Note: The `if` field may not filter reliably in all contexts. Enforcement and reminder scripts include self-validation of `tool_input` as a fallback.
 
 ## Templates
 
@@ -106,3 +147,5 @@ Working hook scripts in `templates/`, ready to use as-is:
 - **`git-add-reminder.mjs`** — Reminder when staging files
 - **`exit-plan-mode-enforce.mjs`** — Block ExitPlanMode without completed plan review
 - **`git-commit-enforce.mjs`** — Block git commit without completed code review
+- **`lib/run-with-session-env.sh`** — Wrapper that sources session env before running a hook script
+- **`lib/hook-helpers.mjs`** — Shared `deny()` and `fetchSessionJobs()` utilities for enforcement hooks

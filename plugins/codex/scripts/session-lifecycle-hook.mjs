@@ -100,6 +100,7 @@ function handleSessionStart(input) {
   // Process setup: env vars and PATH
   appendEnvVar(SESSION_ID_ENV, input.session_id);
   appendEnvVar("CODEX_COMPANION_DATA_DIR", process.env[PLUGIN_DATA_ENV]);
+  appendEnvVar("CLAUDE_PROJECT_DIR", process.env.CLAUDE_PROJECT_DIR);
   appendEnvPath(SCRIPT_DIR);
 
   // Check codex availability
@@ -115,12 +116,20 @@ function handleSessionStart(input) {
     return;
   }
 
-  // Codex is ready — emit status message and help text as additionalContext
+  // Check if setup has been run
+  const pluginDataDir = process.env[PLUGIN_DATA_ENV];
+  const setupRanFile = pluginDataDir ? path.join(pluginDataDir, "setup-ran") : null;
+  const setupRan = setupRanFile && fs.existsSync(setupRanFile);
+
+  const statusMsg = setupRan
+    ? "\u001b[1;34mcodex:\u001b[0m available"
+    : "\u001b[1;34mcodex:\u001b[0m run \u001b[1;35m/codex:setup\u001b[0m to configure";
+
   const helpText = getHelpText();
   const additionalContext = helpText ? `## codex-companion\n\n${helpText}` : "";
 
   const output = {
-    systemMessage: "\u001b[1;34mcodex:\u001b[0m available",
+    systemMessage: statusMsg,
     ...(additionalContext ? {
       hookSpecificOutput: {
         hookEventName: "SessionStart",

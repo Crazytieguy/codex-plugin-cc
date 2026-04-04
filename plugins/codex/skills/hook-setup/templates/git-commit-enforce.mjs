@@ -1,25 +1,19 @@
 #!/usr/bin/env node
 // PreToolUse enforcement: block git commit unless a code review has completed
 // since the last commit. Uses timestamp comparison: review completedAt vs last commit time.
-// Hook config: matcher "Bash", if "Bash(git commit:*)"
+// Hook config: matcher "Bash", if "Bash(git commit:*)", wrapped by run-with-session-env.sh
 
 import fs from "node:fs";
 import { execSync } from "node:child_process";
+import { deny, fetchSessionJobs } from "./lib/hook-helpers.mjs";
 
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 
-const sessionId =
-  process.env.CODEX_COMPANION_SESSION_ID || input.session_id || "";
-
-function deny(reason) {
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: reason
-    }
-  };
-  process.stdout.write(JSON.stringify(output) + "\n");
+// Self-validate: exit early if this isn't actually a git commit command
+// (defense against `if` pattern matching bugs in Claude Code hooks)
+const command = input.tool_input?.command ?? "";
+if (!command.match(/^git\s+commit\b/)) {
+  process.exit(0);
 }
 
 // Get the timestamp of the last git commit
@@ -31,35 +25,17 @@ try {
   }).trim();
   lastCommitTime = raw ? new Date(raw) : null;
 } catch {
-  // No commits yet or not in a git repo — allow
   lastCommitTime = null;
 }
 
-// Get codex job status
-let statusData;
-try {
-  const raw = execSync("codex-companion status --all --json", {
-    encoding: "utf8",
-    timeout: 10000
-  });
-  statusData = JSON.parse(raw);
-} catch {
+const allJobs = fetchSessionJobs();
+if (!allJobs) {
+  // codex-companion unavailable — fail open
   process.exit(0);
 }
 
-// Collect all jobs
-const allJobs = [
-  ...(statusData.running ?? []),
-  ...(statusData.recent ?? []),
-  ...(statusData.latestFinished ? [statusData.latestFinished] : [])
-];
-
-const sessionJobs = sessionId
-  ? allJobs.filter((job) => job.sessionId === sessionId)
-  : allJobs;
-
 // Check if a review is currently running
-const runningReview = sessionJobs.find(
+const runningReview = allJobs.find(
   (job) =>
     (job.kind === "review" || job.kind === "adversarial-review") &&
     (job.status === "queued" || job.status === "running")
@@ -73,7 +49,7 @@ if (runningReview) {
 }
 
 // Find the most recent completed review
-const completedReviews = sessionJobs.filter(
+const completedReviews = allJobs.filter(
   (job) =>
     (job.kind === "review" || job.kind === "adversarial-review") &&
     job.status === "completed" &&
@@ -91,7 +67,7 @@ if (completedReviews.length === 0) {
 
 // Check if any completed review is more recent than the last commit
 const hasRecentReview = completedReviews.some((job) => {
-  if (!lastCommitTime) return true; // No prior commits — any review counts
+  if (!lastCommitTime) return true;
   return new Date(job.completedAt) > lastCommitTime;
 });
 
