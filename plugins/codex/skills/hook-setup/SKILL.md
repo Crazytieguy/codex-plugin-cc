@@ -53,7 +53,7 @@ Use `AskUserQuestion` with single select:
 
 ### Step 3: Write Hooks
 
-Based on selections, copy the appropriate template scripts from `templates/` to the project's `.claude/scripts/` directory. Create the directory and add a `.gitignore` with `*` if it doesn't exist. Only modify the scripts if the user requested something custom.
+Based on selections, copy the appropriate template scripts from `templates/` to the project's `.claude/scripts/` directory. Create the directory and add a `.gitignore` with `*` if it doesn't exist. Use a single Bash command to copy all selected templates at once — each Write to `.claude/` triggers a separate permission prompt, so batching into one Bash command avoids tedious repeated approvals. Only fall back to writing files individually if the user requested customization.
 
 **Always copy `templates/lib/` to `.claude/scripts/lib/` as well** — it contains `run-with-session-env.sh` (a wrapper that sources Claude Code session environment variables before running hook scripts) and `hook-helpers.mjs` (shared utilities used by enforcement scripts). Enforcement hooks require the wrapper to access `codex-companion`.
 
