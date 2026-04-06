@@ -1,7 +1,7 @@
 export function getUsageText() {
   return `codex-companion — Codex reviews and tasks from Claude Code.
 
-Review commands:
+Review commands (run foreground reviews with a 10-minute Bash timeout — timeout: 600000):
 
   review [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--json]
          [--include-stderr] [--include-reasoning]
