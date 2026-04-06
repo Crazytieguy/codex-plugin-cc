@@ -1,8 +1,5 @@
 {
   "name": "codex",
   "version": "1.0.2",
-  "description": "Run Codex reviews, plan reviews, and tasks from Claude Code.",
-  "author": {
-    "name": "Yoav Tzfati (fork of OpenAI's codex-plugin-cc)"
-  }
+  "description": "Run Codex reviews, plan reviews, and tasks from Claude Code."
 }

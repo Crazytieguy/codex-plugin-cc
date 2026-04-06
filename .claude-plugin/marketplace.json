@@ -1,21 +1,11 @@
 {
-  "name": "openai-codex",
-  "owner": {
-    "name": "OpenAI"
-  },
-  "metadata": {
-    "description": "Codex plugins to use in Claude Code for delegation and code review.",
-    "version": "1.0.2"
-  },
+  "name": "codex-plugin-cc",
+  "owner": { "name": "Crazytieguy" },
   "plugins": [
     {
       "name": "codex",
-      "description": "Use Codex from Claude Code to review code or delegate tasks.",
-      "version": "1.0.2",
-      "author": {
-        "name": "OpenAI"
-      },
-      "source": "./plugins/codex"
+      "source": "./plugins/codex",
+      "description": "Use Codex from Claude Code for code reviews, plan reviews, and task delegation."
     }
   ]
 }
