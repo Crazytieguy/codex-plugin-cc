@@ -13,9 +13,9 @@ Review commands (run foreground reviews with a 10-minute Bash timeout — timeou
     Targeted review challenging design choices, tradeoffs, and assumptions.
     Faster than review. Optional focus text steers the critique. Read-only.
 
-  plan-review <file> [--model <model>] [--include-stderr]
+  plan-review <file> [--model <model>] [--include-stderr] [--resume]
     Adversarial review of a plan file. Codex reads plan content and inspects referenced files.
-    Use before exiting plan mode.
+    Use before exiting plan mode. --resume continues a prior review thread for the same file.
 
 Other commands (run codex-companion help <command> for details):
 
@@ -63,7 +63,10 @@ referenced files. Use before exiting plan mode.
 
 Options:
   --model <model>      Choose a model.
-  --include-stderr     Show Codex progress on stderr while running.`,
+  --include-stderr     Show Codex progress on stderr while running.
+  --resume             Continue a prior review thread for the same file.
+                       Codex keeps its previous context, so it can focus
+                       on what changed instead of re-reading the codebase.`,
 
     task: `codex-companion task [options] [prompt]
 

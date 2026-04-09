@@ -919,6 +919,13 @@ export function buildPersistentTaskThreadName(prompt) {
   return buildTaskThreadName(prompt);
 }
 
+const PLAN_REVIEW_THREAD_PREFIX = "Codex Plan Review";
+
+export function buildPersistentPlanReviewThreadName(relativePath) {
+  const normalized = relativePath.replace(/\\/g, "/");
+  return `${PLAN_REVIEW_THREAD_PREFIX}: ${normalized}`;
+}
+
 export function parseStructuredOutput(rawOutput, fallback = {}) {
   if (!rawOutput) {
     return {
@@ -950,4 +957,4 @@ export function readOutputSchema(schemaPath) {
   return readJsonFile(schemaPath);
 }
 
-export { DEFAULT_CONTINUE_PROMPT, TASK_THREAD_PREFIX };
+export { DEFAULT_CONTINUE_PROMPT, PLAN_REVIEW_THREAD_PREFIX, TASK_THREAD_PREFIX };

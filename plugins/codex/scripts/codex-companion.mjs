@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
 import {
+    buildPersistentPlanReviewThreadName,
     buildPersistentTaskThreadName,
     DEFAULT_CONTINUE_PROMPT,
     findLatestTaskThread,
@@ -619,23 +620,42 @@ function enqueueBackgroundTask(cwd, job, request) {
   };
 }
 
-function buildPlanReviewPrompt(planFile, planContent) {
-  const template = loadPromptTemplate(ROOT_DIR, "plan-review");
+function buildPlanReviewPrompt(planContent, { resume = false } = {}) {
+  const templateName = resume ? "plan-review-followup" : "plan-review";
+  const template = loadPromptTemplate(ROOT_DIR, templateName);
   return interpolateTemplate(template, {
     PLAN_CONTENT: planContent
   });
+}
+
+function resolveLatestPlanReviewThread(workspaceRoot, resolvedPath) {
+  const jobs = sortJobsNewestFirst(listJobs(workspaceRoot));
+  for (const job of jobs) {
+    if (job.kind !== "plan-review" || job.status !== "completed" || !job.threadId) {
+      continue;
+    }
+    const stored = readStoredJob(workspaceRoot, job.id);
+    if (stored?.result?.planFile === resolvedPath) {
+      return { id: job.threadId };
+    }
+  }
+  return null;
 }
 
 async function executePlanReviewRun(request) {
   ensureCodexReady(request.cwd);
 
   const workspaceRoot = resolveWorkspaceRoot(request.cwd);
-  const prompt = buildPlanReviewPrompt(request.planFile, request.planContent);
+  const prompt = buildPlanReviewPrompt(request.planContent, { resume: Boolean(request.resumeThreadId) });
+  const relativePath = path.relative(workspaceRoot, request.planFile);
   const result = await runAppServerTurn(workspaceRoot, {
+    resumeThreadId: request.resumeThreadId,
     prompt,
     model: request.model,
     sandbox: "read-only",
-    onProgress: request.onProgress
+    onProgress: request.onProgress,
+    persistThread: true,
+    threadName: request.resumeThreadId ? null : buildPersistentPlanReviewThreadName(relativePath)
   });
 
   const rawOutput = typeof result.finalMessage === "string" ? result.finalMessage : "";
@@ -666,7 +686,7 @@ async function executePlanReviewRun(request) {
 async function handlePlanReview(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "cwd"],
-    booleanOptions: ["include-stderr"],
+    booleanOptions: ["include-stderr", "resume"],
     aliasMap: {
       m: "model"
     }
@@ -689,6 +709,15 @@ async function handlePlanReview(argv) {
     throw new Error(`Plan file is empty: ${resolvedPath}`);
   }
 
+  let resumeThreadId = null;
+  if (options.resume) {
+    const thread = resolveLatestPlanReviewThread(workspaceRoot, resolvedPath);
+    if (!thread) {
+      throw new Error(`No previous plan review thread found for ${resolvedPath}. Run without --resume first.`);
+    }
+    resumeThreadId = thread.id;
+  }
+
   const model = normalizeRequestedModel(options.model);
   const job = createCompanionJob({
     prefix: "plan-review",
@@ -707,6 +736,7 @@ async function handlePlanReview(argv) {
         model,
         planFile: resolvedPath,
         planContent,
+        resumeThreadId,
         onProgress: progress
       }),
     { includeStderr: options["include-stderr"] }
