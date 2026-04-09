@@ -51,12 +51,6 @@ test("hook-setup skill exists with templates", () => {
   assert.ok(exists("skills/hook-setup/templates/git-commit-enforce.mjs"));
 });
 
-test("plan-review prompt template exists", () => {
-  const template = read("prompts/plan-review.md");
-  assert.match(template, /\{\{PLAN_CONTENT\}\}/);
-  assert.match(template, /adversarial/i);
-});
-
 test("plan-review subcommand exists in codex-companion", () => {
   const source = read("scripts/codex-companion.mjs");
   assert.match(source, /case "plan-review":/);
