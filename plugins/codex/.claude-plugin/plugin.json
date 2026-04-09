@@ -1,5 +1,5 @@
 {
   "name": "codex",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Run Codex reviews, plan reviews, and tasks from Claude Code."
 }

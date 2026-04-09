@@ -81,7 +81,7 @@ Enforcement hooks that call `codex-companion` must be wrapped by `run-with-sessi
           {
             "type": "command",
             "if": "Write(*/.claude/plans/*.md)",
-            "command": "node .claude/scripts/plan-write-reminder.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/plan-write-reminder.mjs\"",
             "timeout": 5
           }
         ]
@@ -91,7 +91,7 @@ Enforcement hooks that call `codex-companion` must be wrapped by `run-with-sessi
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/lib/run-with-session-env.sh .claude/scripts/exit-plan-mode-enforce.mjs",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/lib/run-with-session-env.sh\" \"$CLAUDE_PROJECT_DIR/.claude/scripts/exit-plan-mode-enforce.mjs\"",
             "timeout": 15
           }
         ]
@@ -101,7 +101,7 @@ Enforcement hooks that call `codex-companion` must be wrapped by `run-with-sessi
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/scripts/simplify-reminder.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/simplify-reminder.mjs\"",
             "timeout": 5
           }
         ]
@@ -112,13 +112,13 @@ Enforcement hooks that call `codex-companion` must be wrapped by `run-with-sessi
           {
             "type": "command",
             "if": "Bash(git add *)",
-            "command": "node .claude/scripts/git-add-reminder.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/git-add-reminder.mjs\"",
             "timeout": 5
           },
           {
             "type": "command",
             "if": "Bash(git commit:*)",
-            "command": "bash .claude/scripts/lib/run-with-session-env.sh .claude/scripts/git-commit-enforce.mjs",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/lib/run-with-session-env.sh\" \"$CLAUDE_PROJECT_DIR/.claude/scripts/git-commit-enforce.mjs\"",
             "timeout": 15
           }
         ]
