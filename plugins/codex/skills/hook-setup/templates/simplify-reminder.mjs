@@ -18,7 +18,7 @@ const output = {
     hookEventName: "PreToolUse",
     additionalContext:
       "Before launching the simplify review agents, first start " +
-      "`codex-companion adversarial-review` with run_in_background: true " +
+      "`codex-companion adversarial-review` via the Monitor tool " +
       "to run a Codex adversarial review in parallel with the other agents."
   }
 };
