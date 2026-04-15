@@ -229,7 +229,7 @@ export function buildStatusSnapshot(cwd, options = {}) {
 
   return {
     workspaceRoot,
-    sessionRuntime: getSessionRuntimeStatus(options.env),
+    sessionRuntime: getSessionRuntimeStatus(options.env, workspaceRoot),
     running,
     latestFinished,
     recent
@@ -275,7 +275,7 @@ export function resolveResultJob(cwd, reference) {
   throw new Error("No finished Codex jobs found for this repository yet.");
 }
 
-export function resolveCancelableJob(cwd, reference) {
+export function resolveCancelableJob(cwd, reference, options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const jobs = sortJobsNewestFirst(listJobs(workspaceRoot));
   const activeJobs = jobs.filter((job) => job.status === "queued" || job.status === "running");
@@ -288,11 +288,17 @@ export function resolveCancelableJob(cwd, reference) {
     return { workspaceRoot, job: selected };
   }
 
-  if (activeJobs.length === 1) {
-    return { workspaceRoot, job: activeJobs[0] };
+  const sessionScopedActiveJobs = filterJobsForCurrentSession(activeJobs, options);
+
+  if (sessionScopedActiveJobs.length === 1) {
+    return { workspaceRoot, job: sessionScopedActiveJobs[0] };
   }
-  if (activeJobs.length > 1) {
+  if (sessionScopedActiveJobs.length > 1) {
     throw new Error("Multiple Codex jobs are active. Pass a job id to codex-companion cancel.");
+  }
+
+  if (getCurrentSessionId(options)) {
+    throw new Error("No active Codex jobs to cancel for this session.");
   }
 
   throw new Error("No active Codex jobs to cancel.");

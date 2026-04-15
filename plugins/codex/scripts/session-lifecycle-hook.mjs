@@ -15,7 +15,7 @@ import {
   sendBrokerShutdown,
   teardownBrokerSession
 } from "./lib/broker-lifecycle.mjs";
-import { getCodexLoginStatus } from "./lib/codex.mjs";
+import { getCodexAvailability } from "./lib/codex.mjs";
 import { getUsageText } from "./lib/help.mjs";
 import { loadState } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
@@ -92,8 +92,8 @@ function handleSessionStart(input) {
 
   // Check codex availability
   const cwd = input.cwd || process.cwd();
-  const authStatus = getCodexLoginStatus(cwd);
-  const ready = authStatus.available && authStatus.loggedIn;
+  const availability = getCodexAvailability(cwd);
+  const ready = availability.available;
 
   if (!ready) {
     const output = {

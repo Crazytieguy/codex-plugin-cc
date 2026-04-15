@@ -1,14 +1,25 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
+function resolveWindowsShell() {
+  const shell = process.env.SHELL;
+  // Only honor SHELL if it looks like a native Windows path (e.g. C:\Program Files\Git\bin\bash.exe).
+  // Git Bash / MSYS often set SHELL to a POSIX path like /usr/bin/bash, which spawnSync cannot resolve.
+  if (shell && /^[A-Za-z]:[\\/]/.test(shell)) {
+    return shell;
+  }
+  return true;
+}
+
 export function runCommand(command, args = [], options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env,
     encoding: "utf8",
     input: options.input,
+    maxBuffer: options.maxBuffer,
     stdio: options.stdio ?? "pipe",
-    shell: process.platform === "win32",
+    shell: process.platform === "win32" ? resolveWindowsShell() : false,
     windowsHide: true
   });
 
