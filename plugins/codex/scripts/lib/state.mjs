@@ -10,7 +10,6 @@ const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const FALLBACK_STATE_ROOT_DIR = path.join(os.tmpdir(), "codex-companion");
 const STATE_FILE_NAME = "state.json";
 const JOBS_DIR_NAME = "jobs";
-const MAX_JOBS = 50;
 
 function nowIso() {
   return new Date().toISOString();
@@ -75,12 +74,6 @@ export function loadState(cwd) {
   }
 }
 
-function pruneJobs(jobs) {
-  return [...jobs]
-    .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")))
-    .slice(0, MAX_JOBS);
-}
-
 function removeFileIfExists(filePath) {
   if (filePath && fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
@@ -90,7 +83,7 @@ function removeFileIfExists(filePath) {
 export function saveState(cwd, state) {
   const previousJobs = loadState(cwd).jobs;
   ensureStateDir(cwd);
-  const nextJobs = pruneJobs(state.jobs ?? []);
+  const nextJobs = state.jobs ?? [];
   const nextState = {
     version: STATE_VERSION,
     config: {

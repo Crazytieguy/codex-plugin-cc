@@ -1285,7 +1285,7 @@ test("cancel sends turn interrupt to the shared app-server before killing a brok
   assert.equal(cleanup.status, 0, cleanup.stderr);
 });
 
-test("session end fully cleans up jobs for the ending session", async (t) => {
+test("session end terminates running jobs but preserves all job records", async (t) => {
   const repo = makeTempDir();
   initGitRepo(repo);
   fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
@@ -1296,17 +1296,12 @@ test("session end fully cleans up jobs for the ending session", async (t) => {
   const jobsDir = path.join(stateDir, "jobs");
   fs.mkdirSync(jobsDir, { recursive: true });
 
-  const completedLog = path.join(jobsDir, "completed.log");
   const runningLog = path.join(jobsDir, "running.log");
+  const completedLog = path.join(jobsDir, "completed.log");
   const otherSessionLog = path.join(jobsDir, "other.log");
-  const completedJobFile = path.join(jobsDir, "review-completed.json");
-  const runningJobFile = path.join(jobsDir, "review-running.json");
-  const otherJobFile = path.join(jobsDir, "review-other.json");
-  fs.writeFileSync(completedLog, "completed\n", "utf8");
   fs.writeFileSync(runningLog, "running\n", "utf8");
+  fs.writeFileSync(completedLog, "completed\n", "utf8");
   fs.writeFileSync(otherSessionLog, "other\n", "utf8");
-  fs.writeFileSync(completedJobFile, JSON.stringify({ id: "review-completed" }, null, 2), "utf8");
-  fs.writeFileSync(otherJobFile, JSON.stringify({ id: "review-other" }, null, 2), "utf8");
 
   const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     cwd: repo,
@@ -1314,7 +1309,6 @@ test("session end fully cleans up jobs for the ending session", async (t) => {
     stdio: "ignore"
   });
   sleeper.unref();
-  fs.writeFileSync(runningJobFile, JSON.stringify({ id: "review-running" }, null, 2), "utf8");
 
   t.after(() => {
     try {
@@ -1328,42 +1322,44 @@ test("session end fully cleans up jobs for the ending session", async (t) => {
     }
   });
 
+  const initialJobs = [
+    {
+      id: "review-completed",
+      status: "completed",
+      title: "Codex Review",
+      sessionId: "sess-current",
+      logFile: completedLog,
+      createdAt: "2026-03-18T15:30:00.000Z",
+      updatedAt: "2026-03-18T15:31:00.000Z"
+    },
+    {
+      id: "review-running",
+      status: "running",
+      title: "Codex Review",
+      sessionId: "sess-current",
+      pid: sleeper.pid,
+      logFile: runningLog,
+      createdAt: "2026-03-18T15:32:00.000Z",
+      updatedAt: "2026-03-18T15:33:00.000Z"
+    },
+    {
+      id: "review-other",
+      status: "completed",
+      title: "Codex Review",
+      sessionId: "sess-other",
+      logFile: otherSessionLog,
+      createdAt: "2026-03-18T15:34:00.000Z",
+      updatedAt: "2026-03-18T15:35:00.000Z"
+    }
+  ];
+
   fs.writeFileSync(
     path.join(stateDir, "state.json"),
     `${JSON.stringify(
       {
         version: 1,
         config: { stopReviewGate: false },
-        jobs: [
-          {
-            id: "review-completed",
-            status: "completed",
-            title: "Codex Review",
-            sessionId: "sess-current",
-            logFile: completedLog,
-            createdAt: "2026-03-18T15:30:00.000Z",
-            updatedAt: "2026-03-18T15:31:00.000Z"
-          },
-          {
-            id: "review-running",
-            status: "running",
-            title: "Codex Review",
-            sessionId: "sess-current",
-            pid: sleeper.pid,
-            logFile: runningLog,
-            createdAt: "2026-03-18T15:32:00.000Z",
-            updatedAt: "2026-03-18T15:33:00.000Z"
-          },
-          {
-            id: "review-other",
-            status: "completed",
-            title: "Codex Review",
-            sessionId: "sess-other",
-            logFile: otherSessionLog,
-            createdAt: "2026-03-18T15:34:00.000Z",
-            updatedAt: "2026-03-18T15:35:00.000Z"
-          }
-        ]
+        jobs: initialJobs
       },
       null,
       2
@@ -1385,12 +1381,6 @@ test("session end fully cleans up jobs for the ending session", async (t) => {
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(fs.existsSync(otherSessionLog), true);
-  assert.equal(fs.existsSync(otherJobFile), true);
-  assert.deepEqual(
-    fs.readdirSync(path.dirname(otherJobFile)).sort(),
-    [path.basename(otherJobFile), path.basename(otherSessionLog)].sort()
-  );
 
   await waitFor(() => {
     try {
@@ -1402,9 +1392,13 @@ test("session end fully cleans up jobs for the ending session", async (t) => {
   });
 
   const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
-  assert.deepEqual(state.jobs.map((job) => job.id), ["review-other"]);
-  const otherJob = state.jobs[0];
-  assert.equal(otherJob.logFile, otherSessionLog);
+  assert.deepEqual(
+    state.jobs.map((job) => job.id).sort(),
+    ["review-completed", "review-other", "review-running"]
+  );
+  assert.equal(fs.existsSync(completedLog), true);
+  assert.equal(fs.existsSync(runningLog), true);
+  assert.equal(fs.existsSync(otherSessionLog), true);
 });
 
 test("commands lazily start and reuse one shared app-server after first use", async () => {

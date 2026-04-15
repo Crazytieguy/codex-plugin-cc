@@ -17,7 +17,7 @@ import {
 } from "./lib/broker-lifecycle.mjs";
 import { getCodexLoginStatus } from "./lib/codex.mjs";
 import { getUsageText } from "./lib/help.mjs";
-import { loadState, resolveStateFile, saveState } from "./lib/state.mjs";
+import { loadState } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 export const SESSION_ID_ENV = "CODEX_COMPANION_SESSION_ID";
@@ -54,26 +54,18 @@ function getHelpText() {
   return getUsageText();
 }
 
-function cleanupSessionJobs(cwd, sessionId) {
+function terminateSessionProcesses(cwd, sessionId) {
   if (!cwd || !sessionId) {
     return;
   }
 
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const stateFile = resolveStateFile(workspaceRoot);
-  if (!fs.existsSync(stateFile)) {
-    return;
-  }
-
   const state = loadState(workspaceRoot);
-  const removedJobs = state.jobs.filter((job) => job.sessionId === sessionId);
-  if (removedJobs.length === 0) {
-    return;
-  }
-
-  for (const job of removedJobs) {
-    const stillRunning = job.status === "queued" || job.status === "running";
-    if (!stillRunning) {
+  for (const job of state.jobs) {
+    if (job.sessionId !== sessionId) {
+      continue;
+    }
+    if (job.status !== "queued" && job.status !== "running") {
       continue;
     }
     try {
@@ -82,11 +74,6 @@ function cleanupSessionJobs(cwd, sessionId) {
       // Ignore teardown failures during session shutdown.
     }
   }
-
-  saveState(workspaceRoot, {
-    ...state,
-    jobs: state.jobs.filter((job) => job.sessionId !== sessionId)
-  });
 }
 
 function handleSessionStart(input) {
@@ -161,7 +148,7 @@ async function handleSessionEnd(input) {
     await sendBrokerShutdown(brokerEndpoint);
   }
 
-  cleanupSessionJobs(cwd, input.session_id || process.env[SESSION_ID_ENV]);
+  terminateSessionProcesses(cwd, input.session_id || process.env[SESSION_ID_ENV]);
   teardownBrokerSession({
     endpoint: brokerEndpoint,
     pidFile,
