@@ -18,7 +18,7 @@ const output = {
     additionalContext:
       "After finalizing this plan, run `codex-companion plan-review " +
       filePath +
-      "` to get Codex feedback, address any comments, then exit plan mode."
+      "` to get Codex feedback. Address any comments, or escalate to the user if unsure."
   }
 };
 

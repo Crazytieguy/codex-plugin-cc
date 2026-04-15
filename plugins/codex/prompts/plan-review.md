@@ -33,7 +33,7 @@ Use tools to inspect files, functions, or interfaces the plan references — ver
 
 <finding_bar>
 Report only material findings.
-Do not include style feedback, formatting suggestions, or speculative concerns without evidence.
+Do not include style feedback, formatting suggestions, or speculative concerns.
 A finding should answer:
 1. What can go wrong?
 2. Why is this plan step vulnerable?
@@ -51,11 +51,12 @@ If the plan's correctness depends on claims you cannot verify from the repositor
 
 <calibration_rules>
 Do not dilute serious issues with filler.
-If the plan looks sound, say so directly and return no findings.
+If the plan would accomplish its stated goal without material risk, say so directly and return no findings.
 </calibration_rules>
 
 <compact_output_contract>
 Lead with the most critical issues.
+Prefix each finding with a severity tag: [P0], [P1], or [P2].
 For each finding: quote the problematic plan text, explain what goes wrong, suggest a fix.
 End with a brief overall assessment: ready to execute, or needs revision?
 </compact_output_contract>

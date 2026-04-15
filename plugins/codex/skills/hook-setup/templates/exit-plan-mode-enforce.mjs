@@ -22,7 +22,7 @@ const runningPlanReview = allJobs.find(
 
 if (runningPlanReview) {
   deny(
-    "A Codex plan review is still running. Wait for it to finish, address any feedback, then try ExitPlanMode again."
+    "A Codex plan review is still running. Wait for it to finish, then address any feedback or escalate to the user if unsure."
   );
   process.exit(0);
 }
@@ -35,8 +35,8 @@ const completedPlanReview = allJobs.find(
 if (!completedPlanReview) {
   deny(
     "No Codex plan review has been completed in this session. " +
-      "Run `codex-companion plan-review <plan-file>` to get feedback on the plan, " +
-      "address any comments, then try ExitPlanMode again."
+      "Run `codex-companion plan-review <plan-file>` to get feedback. " +
+      "Address any comments, or escalate to the user if unsure."
   );
   process.exit(0);
 }

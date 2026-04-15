@@ -1,6 +1,6 @@
 {
   "name": "codex-plugin-cc",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "description": "Use Codex from Claude Code for code reviews, plan reviews, and task delegation.",
