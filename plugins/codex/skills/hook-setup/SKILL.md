@@ -13,7 +13,14 @@ AI models from different providers have different strengths. OpenAI models are w
 
 ## Re-run Behavior
 
-Before starting, check `.claude/settings.local.json` for existing codex review hooks (PreToolUse hooks referencing codex-companion or plan-review scripts). If hooks exist, tell the user what's currently configured and ask if they want to reconfigure. If reconfiguring, replace the existing hooks.
+Before starting, check `.claude/settings.local.json` for existing codex review hooks (PreToolUse hooks referencing codex-companion or plan-review scripts). If no hooks exist, proceed to the setup flow.
+
+If hooks exist, first check whether they're **worktree-safe** — either `.claude/scripts/` contains tracked files or `.worktreeinclude` at the repo root lists `.claude/scripts/` (see Step 3a for why this matters).
+
+Then tell the user what's currently configured, including whether the hooks are worktree-safe. Offer the relevant options:
+
+- If worktree-safe: just ask whether to reconfigure the hook selections.
+- If not worktree-safe: explain that the hooks will break in any new CLI-created worktree, and ask whether to (a) apply the worktree fix only — append `.claude/scripts/` to `.worktreeinclude`, creating the file if needed — or (b) reconfigure the hook selections (which runs the full setup flow and picks up the fix as part of Step 3a).
 
 ## Setup Flow
 
@@ -53,11 +60,33 @@ Use `AskUserQuestion` with single select:
 
 ### Step 3: Write Hooks
 
-Based on selections, copy the appropriate template scripts from `templates/` to the project's `.claude/scripts/` directory. Create the directory and add a `.gitignore` with `*` if it doesn't exist. Use a single Bash command to copy all selected templates at once — each Write to `.claude/` triggers a separate permission prompt, so batching into one Bash command avoids tedious repeated approvals. Only fall back to writing files individually if the user requested customization.
+#### Step 3a: Persistence Strategy
+
+The hook scripts live under `.claude/scripts/`. Claude Code's built-in `git worktree` copier only copies `.claude/settings.local.json`, so unless the scripts are tracked by git OR listed in a `.worktreeinclude` file at the repo root, any new CLI-created worktree will have hooks that reference missing files and crash.
+
+Ask the user how they want the scripts to persist. Use `AskUserQuestion` with single select:
+
+- **Keep developer-local (Recommended)** — Scripts stay gitignored; add `.claude/scripts/` to `.worktreeinclude` at the repo root so worktrees still get them. Commit `.worktreeinclude` itself so the rule applies to teammates too.
+- **Commit the scripts** — Scripts become tracked files in the repo, available to teammates.
+
+Remember the choice for 3b and 3c.
+
+#### Step 3b: Copy Scripts
+
+Copy the appropriate template scripts from `templates/` to the project's `.claude/scripts/` directory. Use a single Bash command to copy all selected templates at once — each Write to `.claude/` triggers a separate permission prompt, so batching into one Bash command avoids tedious repeated approvals. Only fall back to writing files individually if the user requested customization.
 
 **Always copy `templates/lib/` to `.claude/scripts/lib/` as well** — it contains `run-with-session-env.sh` (a wrapper that sources Claude Code session environment variables before running hook scripts) and `hook-helpers.mjs` (shared utilities used by enforcement scripts). Enforcement hooks require the wrapper to access `codex-companion`.
 
-Then add hook entries to `.claude/settings.local.json` under the `hooks` key, pointing to the copied scripts.
+If the user chose **Keep developer-local** in 3a:
+- Create `.claude/scripts/.gitignore` with content `*` if it doesn't exist.
+- Append `.claude/scripts/` to `.worktreeinclude` at the repo root (create the file if needed; skip if the line is already there).
+
+If the user chose **Commit the scripts** in 3a:
+- Skip creating `.claude/scripts/.gitignore`. If one already exists from a previous run, remove it.
+
+#### Step 3c: Update Settings
+
+Add hook entries to `.claude/settings.local.json` under the `hooks` key, pointing to the copied scripts.
 
 **Template mapping:**
 
