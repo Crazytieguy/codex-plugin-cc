@@ -554,25 +554,28 @@ async function captureTurn(client, threadId, startRequest, options = {}) {
   const state = createTurnCaptureState(threadId, options);
   const previousHandler = client.notificationHandler;
 
-  client.setNotificationHandler((message) => {
-    if (!state.turnId) {
-      state.bufferedNotifications.push(message);
-      return;
-    }
-
+  const dispatch = (message) => {
     if (message.method === "thread/started" || message.method === "thread/name/updated") {
       applyTurnNotification(state, message);
       return;
     }
 
     if (!belongsToTurn(state, message)) {
-        if (previousHandler) {
-          previousHandler(message);
-        }
-        return;
+      if (previousHandler) {
+        previousHandler(message);
+      }
+      return;
     }
 
     applyTurnNotification(state, message);
+  };
+
+  client.setNotificationHandler((message) => {
+    if (!state.turnId) {
+      state.bufferedNotifications.push(message);
+      return;
+    }
+    dispatch(message);
   });
 
   try {
@@ -583,13 +586,7 @@ async function captureTurn(client, threadId, startRequest, options = {}) {
       state.threadTurnIds.set(state.threadId, state.turnId);
     }
     for (const message of state.bufferedNotifications) {
-      if (belongsToTurn(state, message)) {
-        applyTurnNotification(state, message);
-      } else {
-        if (previousHandler) {
-          previousHandler(message);
-        }
-      }
+      dispatch(message);
     }
     state.bufferedNotifications.length = 0;
 
