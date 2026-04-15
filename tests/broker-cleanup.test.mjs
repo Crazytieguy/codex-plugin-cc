@@ -50,20 +50,30 @@ test("cleanupTrackedBrokers tears down broker and child app-server", async () =>
   }
   assert.ok(Number.isFinite(session.pid), "broker session should record a pid");
 
-  const descendants = await waitFor(
-    () => {
-      const found = discoverDescendants(session.pid);
-      return found.length > 0 ? found : null;
-    },
-    { timeoutMs: 5000 }
-  );
-  assert.ok(descendants.length >= 1, "broker should have at least one live descendant");
+  // If the platform has no supported process-listing backend, discoverDescendants
+  // returns null and we skip the descendant-specific assertions. The broker/pid
+  // checks still run and the group/tree kill still targets everything.
+  const descendants =
+    discoverDescendants(session.pid) === null
+      ? null
+      : await waitFor(
+          () => {
+            const found = discoverDescendants(session.pid);
+            return found && found.length > 0 ? found : null;
+          },
+          { timeoutMs: 5000 }
+        );
+  if (descendants !== null) {
+    assert.ok(descendants.length >= 1, "broker should have at least one live descendant");
+  }
 
   await cleanupTrackedBrokers();
 
   assert.throws(() => process.kill(session.pid, 0), (error) => error.code === "ESRCH");
-  for (const pid of descendants) {
-    assert.throws(() => process.kill(pid, 0), (error) => error.code === "ESRCH");
+  if (descendants !== null) {
+    for (const pid of descendants) {
+      assert.throws(() => process.kill(pid, 0), (error) => error.code === "ESRCH");
+    }
   }
 
   const parsed = parseBrokerEndpoint(session.endpoint);

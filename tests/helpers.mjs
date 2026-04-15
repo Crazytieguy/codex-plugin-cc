@@ -71,93 +71,93 @@ function isPidAlive(pid) {
 }
 
 /**
- * List direct children of `pid`. Cross-platform. Returns [] if the lookup fails
- * or no children exist. Used by discoverDescendants to walk the tree.
+ * Build a `ppid → pid[]` map for all processes on the system. Returns null if
+ * no supported process-listing backend is available (callers treat null as
+ * "unknown" so they can skip assertions instead of timing out).
+ *
+ * POSIX: `ps -A -o pid=,ppid=`
+ * Windows: `wmic` (deprecated, removed from Windows 11 24H2+) → PowerShell fallback.
  */
-function listDirectChildren(pid) {
-  if (!Number.isFinite(pid)) {
-    return [];
-  }
-
+function buildChildMap() {
   if (process.platform === "win32") {
-    const result = spawnSync(
+    // Try wmic first for older Windows compatibility.
+    const wmic = spawnSync(
       "wmic",
-      ["process", "where", `(ParentProcessId=${pid})`, "get", "ProcessId"],
+      ["process", "get", "ProcessId,ParentProcessId"],
       { encoding: "utf8", windowsHide: true }
     );
-    if (result.status !== 0 || !result.stdout) {
-      return [];
-    }
-    const children = [];
-    for (const line of result.stdout.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || !/^\d+$/.test(trimmed)) continue;
-      const childPid = Number(trimmed);
-      if (Number.isFinite(childPid) && childPid !== pid) {
-        children.push(childPid);
+    if (wmic.status === 0 && wmic.stdout) {
+      const map = new Map();
+      const lines = wmic.stdout.split(/\r?\n/).slice(1);
+      for (const line of lines) {
+        const match = line.trim().match(/^(\d+)\s+(\d+)/);
+        if (!match) continue;
+        const parentPid = Number(match[1]);
+        const childPid = Number(match[2]);
+        if (!map.has(parentPid)) map.set(parentPid, []);
+        map.get(parentPid).push(childPid);
       }
+      return map;
     }
-    return children;
+
+    // Fallback: PowerShell + CIM (works on Windows 11 24H2+ where wmic is gone).
+    const ps = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ParentProcessId) $($_.ProcessId)\" }"
+      ],
+      { encoding: "utf8", windowsHide: true }
+    );
+    if (ps.status === 0 && ps.stdout) {
+      const map = new Map();
+      for (const line of ps.stdout.split(/\r?\n/)) {
+        const match = line.trim().match(/^(\d+)\s+(\d+)/);
+        if (!match) continue;
+        const parentPid = Number(match[1]);
+        const childPid = Number(match[2]);
+        if (!map.has(parentPid)) map.set(parentPid, []);
+        map.get(parentPid).push(childPid);
+      }
+      return map;
+    }
+
+    return null;
   }
 
   const result = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
   if (result.status !== 0 || !result.stdout) {
-    return [];
+    return null;
   }
-  const children = [];
+  const map = new Map();
   for (const line of result.stdout.split("\n")) {
     const match = line.trim().match(/^(\d+)\s+(\d+)/);
     if (!match) continue;
     const childPid = Number(match[1]);
     const parentPid = Number(match[2]);
-    if (parentPid === pid) {
-      children.push(childPid);
-    }
+    if (!map.has(parentPid)) map.set(parentPid, []);
+    map.get(parentPid).push(childPid);
   }
-  return children;
+  return map;
 }
 
 /**
  * Walk the process tree rooted at `pid` and return every descendant. Excludes
- * `pid` itself. Best-effort — if the platform helper returns nothing we return [].
+ * `pid` itself. Returns `null` when no process-listing backend is available on
+ * this platform (callers should skip descendant assertions rather than treating
+ * this as "no descendants"). Returns `[]` when the backend worked but the pid
+ * has no children.
  */
 export function discoverDescendants(pid) {
   if (!Number.isFinite(pid)) {
     return [];
   }
 
-  // Build a full ppid→pid map once and walk it. Cheaper than querying per-node
-  // and avoids races where a child exits between queries.
-  if (process.platform === "win32") {
-    const descendants = [];
-    const stack = [pid];
-    const seen = new Set();
-    while (stack.length > 0) {
-      const current = stack.pop();
-      if (seen.has(current)) continue;
-      seen.add(current);
-      for (const child of listDirectChildren(current)) {
-        descendants.push(child);
-        stack.push(child);
-      }
-    }
-    return descendants;
-  }
-
-  const result = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
-  if (result.status !== 0 || !result.stdout) {
-    return [];
-  }
-  const children = new Map();
-  for (const line of result.stdout.split("\n")) {
-    const match = line.trim().match(/^(\d+)\s+(\d+)/);
-    if (!match) continue;
-    const childPid = Number(match[1]);
-    const parentPid = Number(match[2]);
-    if (!children.has(parentPid)) {
-      children.set(parentPid, []);
-    }
-    children.get(parentPid).push(childPid);
+  const children = buildChildMap();
+  if (children === null) {
+    return null;
   }
 
   const descendants = [];
@@ -241,7 +241,12 @@ export async function cleanupTrackedBrokers() {
     }
 
     const brokerPid = session.pid ?? null;
-    const descendants = Number.isFinite(brokerPid) ? discoverDescendants(brokerPid) : [];
+    // discoverDescendants returns null if the platform has no supported backend.
+    // In that case we skip descendant assertions — the group/tree kill still
+    // targets everything — and only verify the broker pid itself.
+    const discoveredDescendants = Number.isFinite(brokerPid) ? discoverDescendants(brokerPid) : [];
+    const descendants = discoveredDescendants ?? [];
+    const descendantsKnown = discoveredDescendants !== null;
 
     if (session.endpoint) {
       try {
@@ -317,7 +322,9 @@ export async function cleanupTrackedBrokers() {
 
     // Final state check — the only thing that actually fails the suite.
     const brokerStillAlive = isPidAlive(brokerPid);
-    const leakedDescendants = descendants.filter((pid) => isPidAlive(pid));
+    const leakedDescendants = descendantsKnown
+      ? descendants.filter((pid) => isPidAlive(pid))
+      : [];
     const endpointStillUp = session.endpoint ? await endpointReachable(session.endpoint) : false;
     const sessionStillLoaded = loadBrokerSession(dir) !== null;
 
