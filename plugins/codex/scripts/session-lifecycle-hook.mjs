@@ -79,16 +79,19 @@ function terminateSessionProcesses(cwd, sessionId) {
 function handleSessionStart(input) {
   const source = input.source ?? "startup";
 
-  // On resume, context window is intact and CLAUDE_ENV_FILE can't be overwritten.
-  if (source === "resume") {
-    return;
-  }
-
-  // Process setup: env vars and PATH
+  // Always run env/PATH writes — desktop rewind forks the session (new session id,
+  // fresh empty env dir) and fires SessionStart with source="resume"; skipping writes
+  // there leaves `codex-companion` off PATH for the remainder of that session.
   appendEnvVar(SESSION_ID_ENV, input.session_id);
   appendEnvVar("CODEX_COMPANION_DATA_DIR", process.env[PLUGIN_DATA_ENV]);
   appendEnvVar("CLAUDE_PROJECT_DIR", process.env.CLAUDE_PROJECT_DIR);
   appendEnvPath(SCRIPT_DIR);
+
+  // On resume the conversation context is preserved, so don't re-emit the status
+  // systemMessage or re-inject the help text.
+  if (source === "resume") {
+    return;
+  }
 
   // Check codex availability
   const cwd = input.cwd || process.cwd();
