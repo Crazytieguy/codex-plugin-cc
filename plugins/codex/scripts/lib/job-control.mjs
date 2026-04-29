@@ -17,6 +17,9 @@ function getCurrentSessionId(options = {}) {
 }
 
 function filterJobsForCurrentSession(jobs, options = {}) {
+  if (options.skipSessionFilter) {
+    return jobs;
+  }
   const sessionId = getCurrentSessionId(options);
   if (!sessionId) {
     return jobs;

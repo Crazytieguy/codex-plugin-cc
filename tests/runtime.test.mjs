@@ -580,7 +580,7 @@ test("write task output focuses on the Codex result without generic follow-up hi
   assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
 });
 
-test("task --resume acts like --resume-last without leaking the flag into the prompt", () => {
+test("task --resume <job-id> resumes the named thread and reports jobId in JSON", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const statePath = path.join(binDir, "fake-codex-state.json");
@@ -590,24 +590,80 @@ test("task --resume acts like --resume-last without leaking the flag into the pr
   run("git", ["add", "README.md"], { cwd: repo });
   run("git", ["commit", "-m", "init"], { cwd: repo });
 
-  const firstRun = run("node", [SCRIPT, "task", "initial task"], {
+  const firstRun = run("node", [SCRIPT, "task", "--json", "initial task"], {
     cwd: repo,
     env: buildEnv(binDir)
   });
   assert.equal(firstRun.status, 0, firstRun.stderr);
+  const firstPayload = JSON.parse(firstRun.stdout);
+  assert.match(firstPayload.jobId, /^task-/);
+  assert.equal(firstPayload.threadId, "thr_1");
 
-  const result = run("node", [SCRIPT, "task", "--resume", "follow up"], {
+  const result = run("node", [SCRIPT, "task", "--json", "--resume", firstPayload.jobId, "follow up"], {
     cwd: repo,
     env: buildEnv(binDir)
   });
 
   assert.equal(result.status, 0, result.stderr);
+  const resumePayload = JSON.parse(result.stdout);
+  assert.equal(resumePayload.threadId, firstPayload.threadId);
+  assert.notEqual(resumePayload.jobId, firstPayload.jobId);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
   assert.equal(fakeState.lastTurnStart.threadId, "thr_1");
   assert.equal(fakeState.lastTurnStart.prompt, "follow up");
 });
 
-test("task --fresh is treated as routing control and does not leak into the prompt", () => {
+test("task --resume errors with a workspace hint when the job id is unknown", () => {
+  const repo = makeTempDir();
+
+  const result = run("node", [SCRIPT, "task", "--resume", "task-missing", "follow up"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No Codex task found with id task-missing/);
+  assert.match(result.stderr, /codex-companion status --workspace/);
+});
+
+test("task --resume rejects review job ids", () => {
+  const repo = makeTempDir();
+  const stateDir = resolveStateDir(repo);
+  fs.mkdirSync(path.join(stateDir, "jobs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-existing",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            threadId: "thr_review",
+            summary: "Review main...HEAD",
+            updatedAt: "2026-04-01T20:00:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "task", "--resume", "review-existing", "follow up"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No Codex task found with id review-existing/);
+});
+
+test("task --resume <id> resumes a job from another Claude session", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const statePath = path.join(binDir, "fake-codex-state.json");
@@ -617,14 +673,214 @@ test("task --fresh is treated as routing control and does not leak into the prom
   run("git", ["add", "README.md"], { cwd: repo });
   run("git", ["commit", "-m", "init"], { cwd: repo });
 
-  const result = run("node", [SCRIPT, "task", "--fresh", "diagnose the flaky test"], {
+  const otherEnv = {
+    ...buildEnv(binDir),
+    CODEX_COMPANION_SESSION_ID: "sess-other"
+  };
+  const currentEnv = {
+    ...buildEnv(binDir),
+    CODEX_COMPANION_SESSION_ID: "sess-current"
+  };
+
+  const firstRun = run("node", [SCRIPT, "task", "--json", "initial task"], {
     cwd: repo,
-    env: buildEnv(binDir)
+    env: otherEnv
+  });
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+  const firstPayload = JSON.parse(firstRun.stdout);
+
+  const result = run("node", [SCRIPT, "task", "--json", "--resume", firstPayload.jobId, "follow up"], {
+    cwd: repo,
+    env: currentEnv
   });
 
   assert.equal(result.status, 0, result.stderr);
+  const resumePayload = JSON.parse(result.stdout);
+  assert.equal(resumePayload.threadId, firstPayload.threadId);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  assert.equal(fakeState.lastTurnStart.prompt, "diagnose the flaky test");
+  assert.equal(fakeState.lastTurnStart.prompt, "follow up");
+});
+
+test("task --resume rejects values that look like flags", () => {
+  const repo = makeTempDir();
+
+  const fresh = run("node", [SCRIPT, "task", "--resume", "--fresh", "diagnose"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+  assert.equal(fresh.status, 1);
+  assert.match(fresh.stderr, /--fresh has been removed/);
+
+  const arbitrary = run("node", [SCRIPT, "task", "--resume", "--something", "diagnose"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+  assert.equal(arbitrary.status, 1);
+  assert.match(arbitrary.stderr, /Invalid --resume value --something/);
+});
+
+test("task rejects --fresh as a positional and does not leak it into the prompt", () => {
+  const repo = makeTempDir();
+
+  const result = run("node", [SCRIPT, "task", "--fresh", "diagnose the flaky test"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--fresh has been removed/);
+});
+
+test("task rejects combining --resume <id> with --resume-last", () => {
+  const repo = makeTempDir();
+
+  const result = run("node", [SCRIPT, "task", "--resume", "task-x", "--resume-last", "follow up"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Choose either --resume <job-id> or --resume-last/);
+});
+
+test("task allows flag-shaped tokens in the prompt", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run(
+    "node",
+    [SCRIPT, "task", "investigate", "npm", "test", "--", "--runInBand"],
+    { cwd: repo, env: buildEnv(binDir) }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.prompt, "investigate npm test --runInBand");
+});
+
+test("task --resume rejects launching when another job is already resuming the same thread", () => {
+  const repo = makeTempDir();
+  const stateDir = resolveStateDir(repo);
+  fs.mkdirSync(path.join(stateDir, "jobs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-completed",
+            status: "completed",
+            title: "Codex Task",
+            jobClass: "task",
+            threadId: "thr_shared",
+            summary: "Completed task",
+            updatedAt: "2026-04-01T19:55:00.000Z"
+          },
+          {
+            id: "task-active-resume",
+            status: "running",
+            title: "Codex Resume",
+            jobClass: "task",
+            targetThreadId: "thr_shared",
+            summary: "Active resume",
+            updatedAt: "2026-04-01T20:00:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "task", "--resume", "task-completed", "follow up"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Codex thread thr_shared is already being resumed by job task-active-resume/);
+});
+
+test("status --workspace lists jobs from other Claude sessions", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  fs.mkdirSync(path.join(stateDir, "jobs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-current",
+            status: "completed",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-current",
+            threadId: "thr_current",
+            summary: "Current session task",
+            updatedAt: "2026-03-24T20:00:00.000Z"
+          },
+          {
+            id: "task-other-session",
+            status: "completed",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-other",
+            threadId: "thr_other",
+            summary: "Other session task",
+            updatedAt: "2026-03-24T20:05:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const sessionEnv = {
+    ...process.env,
+    CODEX_COMPANION_SESSION_ID: "sess-current"
+  };
+
+  const filtered = run("node", [SCRIPT, "status", "--json"], {
+    cwd: workspace,
+    env: sessionEnv
+  });
+  assert.equal(filtered.status, 0, filtered.stderr);
+  const filteredPayload = JSON.parse(filtered.stdout);
+  const filteredIds = [
+    filteredPayload.latestFinished?.id,
+    ...(filteredPayload.recent ?? []).map((job) => job.id),
+    ...(filteredPayload.running ?? []).map((job) => job.id)
+  ].filter(Boolean);
+  assert.ok(filteredIds.includes("task-current"));
+  assert.ok(!filteredIds.includes("task-other-session"));
+
+  const workspaceWide = run("node", [SCRIPT, "status", "--json", "--workspace"], {
+    cwd: workspace,
+    env: sessionEnv
+  });
+  assert.equal(workspaceWide.status, 0, workspaceWide.stderr);
+  const workspacePayload = JSON.parse(workspaceWide.stdout);
+  const workspaceIds = [
+    workspacePayload.latestFinished?.id,
+    ...(workspacePayload.recent ?? []).map((job) => job.id),
+    ...(workspacePayload.running ?? []).map((job) => job.id)
+  ].filter(Boolean);
+  assert.ok(workspaceIds.includes("task-current"));
+  assert.ok(workspaceIds.includes("task-other-session"));
 });
 
 test("task forwards model selection and reasoning effort to app-server turn/start", () => {

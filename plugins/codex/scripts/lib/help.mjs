@@ -75,15 +75,16 @@ Delegate a task to Codex: investigation, diagnosis, implementation, research.
 Options:
   --background       Run as a detached job (trackable via status/result/cancel).
   --write            Allow Codex to modify files (default is read-only).
-  --resume-last      Continue the most recent Codex task thread.
-  --resume           Shorthand for --resume-last.
-  --fresh            Start a new thread (ignore any existing session).
+  --resume <job-id>  Continue the Codex task thread for the named job. Find ids
+                     with codex-companion status (or status --workspace if the
+                     job was created in a different Claude session).
+  --resume-last      Continue the most recent Codex task thread for this session.
   --model <model>    Choose a model. Usually leave unset for Codex defaults.
                      Use "spark" for gpt-5.3-codex-spark.
   --effort <level>   Reasoning effort: none, minimal, low, medium, high, xhigh.
   --prompt-file <path>  Read task prompt from a file.
   --include-stderr   Show Codex progress on stderr while running.
-  --json             Output structured JSON.`,
+  --json             Output structured JSON (includes jobId).`,
 
     status: `codex-companion status [job-id] [options]
 
@@ -92,6 +93,9 @@ Pass a job-id for detailed single-job status.
 
 Options:
   --all                Show all jobs, not just recent.
+  --workspace          List jobs from this workspace across all Claude sessions.
+                       Use this if a job you expect to see is missing — Claude is
+                       likely running under a new session id.
   --wait               Poll until the job finishes (requires job-id).
   --timeout-ms <ms>    Max wait time when polling.
   --poll-interval-ms <ms>  Poll frequency (default 2000ms).
