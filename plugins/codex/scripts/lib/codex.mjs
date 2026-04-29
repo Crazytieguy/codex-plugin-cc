@@ -36,7 +36,7 @@
  */
 import { readJsonFile } from "./fs.mjs";
 import { BROKER_BUSY_RPC_CODE, BROKER_ENDPOINT_ENV, CodexAppServerClient } from "./app-server.mjs";
-import { clearBrokerSession, loadBrokerSession } from "./broker-lifecycle.mjs";
+import { loadBrokerSession } from "./broker-lifecycle.mjs";
 import { binaryAvailable } from "./process.mjs";
 
 const SERVICE_NAME = "claude_code_codex_plugin";
@@ -855,7 +855,6 @@ export async function getCodexAuthStatus(cwd, options = {}) {
     return await getCodexAuthStatusFromClient(client, cwd);
   } catch (error) {
     if (savedBrokerEndpoint && isConnectionError(error)) {
-      clearBrokerSession(cwd);
       let fallbackClient = null;
       try {
         fallbackClient = await CodexAppServerClient.connect(cwd, {
