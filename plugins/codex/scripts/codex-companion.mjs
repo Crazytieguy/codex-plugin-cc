@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -259,7 +258,7 @@ function renderStatusPayload(report, asJson) {
 }
 
 function isActiveJobStatus(status) {
-  return status === "queued" || status === "running";
+  return status === "running";
 }
 
 function getCurrentClaudeSessionId() {
@@ -280,7 +279,6 @@ function findLatestResumableTaskJob(jobs) {
       (job) =>
         job.jobClass === "task" &&
         job.threadId &&
-        job.status !== "queued" &&
         job.status !== "running"
     ) ?? null
   );
@@ -308,7 +306,7 @@ async function resolveLatestTrackedTaskThread(workspaceRoot, jobs) {
   const sessionId = getCurrentClaudeSessionId();
   const sortedJobs = sortJobsNewestFirst(jobs);
   const visibleJobs = filterJobsForCurrentClaudeSession(sortedJobs);
-  const activeTask = visibleJobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
+  const activeTask = visibleJobs.find((job) => job.jobClass === "task" && job.status === "running");
   if (activeTask) {
     throw new Error(`Task ${activeTask.id} is still running. Use codex-companion status before continuing it.`);
   }
@@ -348,7 +346,7 @@ function assertNoConflictingActiveResume(jobs, targetThreadId) {
   const conflict = jobs.find(
     (job) =>
       job.jobClass === "task" &&
-      (job.status === "queued" || job.status === "running") &&
+      job.status === "running" &&
       (job.threadId === targetThreadId || job.targetThreadId === targetThreadId)
   );
   if (conflict) {
@@ -540,10 +538,6 @@ function buildTaskRunMetadata({ prompt, resume = false }) {
   };
 }
 
-function renderQueuedTaskLaunch(payload) {
-  return `${payload.title} started in the background as ${payload.jobId}. Check codex-companion status ${payload.jobId} for progress.\n`;
-}
-
 function getJobKindLabel(kind, jobClass) {
   if (kind === "adversarial-review") {
     return "adversarial-review";
@@ -630,47 +624,6 @@ async function runForegroundCommand(job, runner, options = {}) {
     process.exitCode = execution.exitStatus;
   }
   return execution;
-}
-
-function spawnDetachedTaskWorker(cwd, jobId) {
-  const scriptPath = path.join(ROOT_DIR, "scripts", "codex-companion.mjs");
-  const child = spawn(process.execPath, [scriptPath, "task-worker", "--cwd", cwd, "--job-id", jobId], {
-    cwd,
-    env: process.env,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true
-  });
-  child.unref();
-  return child;
-}
-
-function enqueueBackgroundTask(cwd, job, request) {
-  const { logFile } = createTrackedProgress(job);
-  appendLogLine(logFile, "Queued for background execution.");
-
-  const child = spawnDetachedTaskWorker(cwd, job.id);
-  const queuedRecord = {
-    ...job,
-    status: "queued",
-    phase: "queued",
-    pid: child.pid ?? null,
-    logFile,
-    request
-  };
-  writeJobFile(job.workspaceRoot, job.id, queuedRecord);
-  upsertJob(job.workspaceRoot, queuedRecord);
-
-  return {
-    payload: {
-      jobId: job.id,
-      status: "queued",
-      title: job.title,
-      summary: job.summary,
-      logFile
-    },
-    logFile
-  };
 }
 
 function buildPlanReviewPrompt(planContent, { resume = false } = {}) {
@@ -853,12 +806,17 @@ function rejectDeprecatedTaskFlag(token) {
       "--fresh has been removed. Omit it to start a new task; use --resume <job-id> or --resume-last to continue an existing one."
     );
   }
+  if (token === "--background") {
+    throw new Error(
+      "--background has been removed. Use Bash run_in_background or Monitor to manage long-running Codex tasks; foreground tasks are still tracked via codex-companion status/result/cancel."
+    );
+  }
 }
 
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "cwd", "prompt-file", "resume"],
-    booleanOptions: ["json", "write", "resume-last", "background", "include-stderr"],
+    booleanOptions: ["json", "write", "resume-last", "include-stderr"],
     aliasMap: {
       m: "model"
     }
@@ -914,25 +872,6 @@ async function handleTask(argv) {
     resume: Boolean(targetThreadId)
   });
 
-  if (options.background) {
-    ensureCodexAvailable(cwd);
-    requireTaskRequest(prompt, Boolean(targetThreadId));
-
-    const job = buildTaskJob(workspaceRoot, taskMetadata, write, targetThreadId);
-    const request = buildTaskRequest({
-      cwd,
-      model,
-      effort,
-      prompt,
-      write,
-      targetThreadId,
-      jobId: job.id
-    });
-    const { payload } = enqueueBackgroundTask(cwd, job, request);
-    outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
-    return;
-  }
-
   const job = buildTaskJob(workspaceRoot, taskMetadata, write, targetThreadId);
   await runForegroundCommand(
     job,
@@ -948,51 +887,6 @@ async function handleTask(argv) {
         onProgress: progress
       }),
     { json: options.json, includeStderr: options["include-stderr"] }
-  );
-}
-
-async function handleTaskWorker(argv) {
-  const { options } = parseCommandInput(argv, {
-    valueOptions: ["cwd", "job-id"]
-  });
-
-  if (!options["job-id"]) {
-    throw new Error("Missing required --job-id for task-worker.");
-  }
-
-  const cwd = resolveCommandCwd(options);
-  const workspaceRoot = resolveCommandWorkspace(options);
-  const storedJob = readStoredJob(workspaceRoot, options["job-id"]);
-  if (!storedJob) {
-    throw new Error(`No stored job found for ${options["job-id"]}.`);
-  }
-
-  const request = storedJob.request;
-  if (!request || typeof request !== "object") {
-    throw new Error(`Stored job ${options["job-id"]} is missing its task request payload.`);
-  }
-
-  const { logFile, progress } = createTrackedProgress(
-    {
-      ...storedJob,
-      workspaceRoot
-    },
-    {
-      logFile: storedJob.logFile ?? null
-    }
-  );
-  await runTrackedJob(
-    {
-      ...storedJob,
-      workspaceRoot,
-      logFile
-    },
-    () =>
-      executeTaskRun({
-        ...request,
-        onProgress: progress
-      }),
-    { logFile }
   );
 }
 
@@ -1178,9 +1072,6 @@ async function main() {
       break;
     case "task":
       await handleTask(argv);
-      break;
-    case "task-worker":
-      await handleTaskWorker(argv);
       break;
     case "status":
       await handleStatus(argv);

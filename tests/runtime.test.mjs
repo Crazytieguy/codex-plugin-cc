@@ -711,6 +711,13 @@ test("task --resume rejects values that look like flags", () => {
   assert.equal(fresh.status, 1);
   assert.match(fresh.stderr, /--fresh has been removed/);
 
+  const background = run("node", [SCRIPT, "task", "--resume", "--background", "diagnose"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+  assert.equal(background.status, 1);
+  assert.match(background.stderr, /--background has been removed/);
+
   const arbitrary = run("node", [SCRIPT, "task", "--resume", "--something", "diagnose"], {
     cwd: repo,
     env: cleanEnv()
@@ -729,6 +736,18 @@ test("task rejects --fresh as a positional and does not leak it into the prompt"
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /--fresh has been removed/);
+});
+
+test("task rejects --background as a positional and does not leak it into the prompt", () => {
+  const repo = makeTempDir();
+
+  const result = run("node", [SCRIPT, "task", "--background", "diagnose the flaky test"], {
+    cwd: repo,
+    env: cleanEnv()
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--background has been removed/);
 });
 
 test("task rejects combining --resume <id> with --resume-last", () => {
@@ -1038,55 +1057,6 @@ test("task using the shared broker still completes when Codex spawns subagents",
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
-});
-
-test("task --background enqueues a detached worker and exposes per-job status", async () => {
-  const repo = makeTempDir();
-  const binDir = makeTempDir();
-  installFakeCodex(binDir, "slow-task");
-  initGitRepo(repo);
-  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
-  run("git", ["add", "README.md"], { cwd: repo });
-  run("git", ["commit", "-m", "init"], { cwd: repo });
-
-  const launched = run("node", [SCRIPT, "task", "--background", "--json", "investigate the failing test"], {
-    cwd: repo,
-    env: buildEnv(binDir)
-  });
-
-  assert.equal(launched.status, 0, launched.stderr);
-  const launchPayload = JSON.parse(launched.stdout);
-  assert.equal(launchPayload.status, "queued");
-  assert.match(launchPayload.jobId, /^task-/);
-
-  const waitedStatus = run(
-    "node",
-    [SCRIPT, "status", launchPayload.jobId, "--wait", "--timeout-ms", "15000", "--json"],
-    {
-      cwd: repo,
-      env: buildEnv(binDir)
-    }
-  );
-
-  assert.equal(waitedStatus.status, 0, waitedStatus.stderr);
-  const waitedPayload = JSON.parse(waitedStatus.stdout);
-  assert.equal(waitedPayload.job.id, launchPayload.jobId);
-  assert.equal(waitedPayload.job.status, "completed");
-
-  const resultPayload = await waitFor(() => {
-    const result = run("node", [SCRIPT, "result", launchPayload.jobId, "--json"], {
-      cwd: repo,
-      env: buildEnv(binDir)
-    });
-    if (result.status !== 0) {
-      return null;
-    }
-    return JSON.parse(result.stdout);
-  });
-
-  assert.equal(resultPayload.job.id, launchPayload.jobId);
-  assert.equal(resultPayload.job.status, "completed");
-  assert.match(resultPayload.storedJob.rendered, /Handled the requested task/);
 });
 
 test("review rejects focus text because it is native-review only", () => {
@@ -1633,7 +1603,7 @@ test("result for a finished write-capable task returns the raw Codex final respo
   assert.match(result.stdout, /Resume in Codex: codex resume thr_[a-z0-9]+/i);
 });
 
-test("cancel stops an active background job and marks it cancelled", async (t) => {
+test("cancel stops an active job and marks it cancelled", async (t) => {
   const workspace = makeTempDir();
   const stateDir = resolveStateDir(workspace);
   const jobsDir = path.join(stateDir, "jobs");
@@ -1831,7 +1801,7 @@ test("cancel with a job id can still target an active job from another Claude se
   assert.equal(state.jobs[0].status, "cancelled");
 });
 
-test("cancel sends turn interrupt to the shared app-server before killing a brokered task", async () => {
+test("cancel sends turn interrupt to the shared app-server before killing a brokered task", async (t) => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const fakeStatePath = path.join(binDir, "fake-codex-state.json");
@@ -1842,27 +1812,44 @@ test("cancel sends turn interrupt to the shared app-server before killing a brok
   run("git", ["commit", "-m", "init"], { cwd: repo });
 
   const env = buildEnv(binDir);
-  const launched = run("node", [SCRIPT, "task", "--background", "--json", "investigate the flaky worker timeout"], {
-    cwd: repo,
-    env
+  const taskProcess = spawn(
+    process.execPath,
+    [SCRIPT, "task", "--json", "investigate the flaky worker timeout"],
+    {
+      cwd: repo,
+      env,
+      stdio: "ignore"
+    }
+  );
+  t.after(() => {
+    try {
+      taskProcess.kill("SIGKILL");
+    } catch {
+      // Already exited.
+    }
   });
 
-  assert.equal(launched.status, 0, launched.stderr);
-  const launchPayload = JSON.parse(launched.stdout);
-  const jobId = launchPayload.jobId;
-  assert.ok(jobId);
-
   const stateDir = resolveStateDir(repo);
+  const statePath = path.join(stateDir, "state.json");
   const runningJob = await waitFor(() => {
-    const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
-    const job = state.jobs.find((candidate) => candidate.id === jobId);
-    if (job?.status === "running" && job.threadId && job.turnId) {
-      return job;
+    let state;
+    try {
+      state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    } catch (err) {
+      if (err?.code === "ENOENT") return null;
+      throw err;
     }
-    return null;
+    const job = state.jobs.find(
+      (candidate) =>
+        candidate.jobClass === "task" &&
+        candidate.status === "running" &&
+        candidate.threadId &&
+        candidate.turnId
+    );
+    return job ?? null;
   }, { timeoutMs: 15000 });
 
-  const cancelResult = run("node", [SCRIPT, "cancel", jobId, "--json"], {
+  const cancelResult = run("node", [SCRIPT, "cancel", runningJob.id, "--json"], {
     cwd: repo,
     env
   });

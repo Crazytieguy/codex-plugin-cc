@@ -17,7 +17,7 @@ if (!allJobs) {
 const runningPlanReview = allJobs.find(
   (job) =>
     job.kind === "plan-review" &&
-    (job.status === "queued" || job.status === "running")
+    job.status === "running"
 );
 
 if (runningPlanReview) {

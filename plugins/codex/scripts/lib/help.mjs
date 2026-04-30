@@ -22,7 +22,7 @@ Other commands (run codex-companion help <command> for details):
   task      Delegate work to Codex (investigation, diagnosis, implementation).
   status    Show running/recent Codex jobs.
   result    Show output of a finished job.
-  cancel    Cancel an active background job.
+  cancel    Cancel an active Codex job.
   setup     Check Codex installation and auth status.
 
   help [command]   Show this text, or details for a specific command.`;
@@ -73,7 +73,6 @@ Options:
 Delegate a task to Codex: investigation, diagnosis, implementation, research.
 
 Options:
-  --background       Run as a detached job (trackable via status/result/cancel).
   --write            Allow Codex to modify files (default is read-only).
   --resume <job-id>  Continue the Codex task thread for the named job. Find ids
                      with codex-companion status (or status --workspace if the
@@ -107,7 +106,7 @@ Show the stored output of a finished Codex job.`,
 
     cancel: `codex-companion cancel [job-id] [--json]
 
-Cancel an active background Codex job.`,
+Cancel an active Codex job.`,
 
     setup: `codex-companion setup [--json]
 

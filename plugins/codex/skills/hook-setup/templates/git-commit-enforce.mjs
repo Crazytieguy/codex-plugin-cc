@@ -38,7 +38,7 @@ if (!allJobs) {
 const runningReview = allJobs.find(
   (job) =>
     (job.kind === "review" || job.kind === "adversarial-review") &&
-    (job.status === "queued" || job.status === "running")
+    job.status === "running"
 );
 
 if (runningReview) {

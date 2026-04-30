@@ -65,7 +65,8 @@ function terminateSessionProcesses(cwd, sessionId) {
     if (job.sessionId !== sessionId) {
       continue;
     }
-    if (job.status !== "queued" && job.status !== "running") {
+    // "queued" is legacy from pre-1.0.12 --background workers; still terminate any orphan PID.
+    if (job.status !== "running" && job.status !== "queued") {
       continue;
     }
     try {

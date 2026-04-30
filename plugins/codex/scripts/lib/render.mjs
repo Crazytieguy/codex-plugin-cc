@@ -112,7 +112,7 @@ function appendActiveJobsTable(lines, jobs) {
   lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const job of jobs) {
     const actions = [`codex-companion status ${job.id}`];
-    if (job.status === "queued" || job.status === "running") {
+    if (job.status === "running") {
       actions.push(`codex-companion cancel ${job.id}`);
     }
     lines.push(
@@ -145,13 +145,13 @@ function pushJobDetails(lines, job, options = {}) {
   if (job.logFile && options.showLog) {
     lines.push(`  Log: ${job.logFile}`);
   }
-  if ((job.status === "queued" || job.status === "running") && options.showCancelHint) {
+  if (job.status === "running" && options.showCancelHint) {
     lines.push(`  Cancel: codex-companion cancel ${job.id}`);
   }
-  if (job.status !== "queued" && job.status !== "running" && options.showResultHint) {
+  if (job.status !== "running" && options.showResultHint) {
     lines.push(`  Result: codex-companion result ${job.id}`);
   }
-  if (job.status !== "queued" && job.status !== "running" && job.jobClass === "task" && job.write && options.showReviewHint) {
+  if (job.status !== "running" && job.jobClass === "task" && job.write && options.showReviewHint) {
     lines.push("  Review changes: codex-companion review");
     lines.push("  Stricter review: codex-companion adversarial-review");
   }
@@ -370,8 +370,8 @@ export function renderStatusReport(report) {
 export function renderJobStatusReport(job) {
   const lines = ["# Codex Job Status", ""];
   pushJobDetails(lines, job, {
-    showElapsed: job.status === "queued" || job.status === "running",
-    showDuration: job.status !== "queued" && job.status !== "running",
+    showElapsed: job.status === "running",
+    showDuration: job.status !== "running",
     showLog: true,
     showCancelHint: true,
     showResultHint: true,
