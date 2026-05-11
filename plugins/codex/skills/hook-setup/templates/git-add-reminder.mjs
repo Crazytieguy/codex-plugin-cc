@@ -16,7 +16,7 @@ const output = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
     additionalContext:
-      "Before committing, run `codex-companion review` to get a comprehensive Codex review of the changes."
+      "Before committing, start `codex-companion review` via the Monitor tool to get a comprehensive Codex review of the changes."
   }
 };
 

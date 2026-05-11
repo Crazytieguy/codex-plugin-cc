@@ -1,7 +1,8 @@
 export function getUsageText() {
   return `codex-companion — Codex reviews and tasks from Claude Code.
+Always start codex reviews and tasks via the Monitor tool, not Bash.
 
-Review commands (run via the Monitor tool):
+Review commands:
 
   review [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--json]
          [--include-stderr] [--include-reasoning]

@@ -808,7 +808,7 @@ function rejectDeprecatedTaskFlag(token) {
   }
   if (token === "--background") {
     throw new Error(
-      "--background has been removed. Use Bash run_in_background or Monitor to manage long-running Codex tasks; foreground tasks are still tracked via codex-companion status/result/cancel."
+      "--background has been removed. Start Codex tasks via the Monitor tool; foreground tasks are still tracked via codex-companion status/result/cancel."
     );
   }
 }

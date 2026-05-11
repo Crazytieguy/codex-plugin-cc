@@ -16,9 +16,9 @@ const output = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
     additionalContext:
-      "After finalizing this plan, run `codex-companion plan-review " +
+      "After finalizing this plan, start `codex-companion plan-review " +
       filePath +
-      "` to get Codex feedback. Address any comments, or escalate to the user if unsure."
+      "` via the Monitor tool to get Codex feedback. Address any comments, or escalate to the user if unsure."
   }
 };
 

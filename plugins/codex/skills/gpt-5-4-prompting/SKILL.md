@@ -32,6 +32,7 @@ Prompt Codex like an operator, not a collaborator. Keep prompts compact and bloc
 
 ## Prompt Shape
 
+- Always start `codex-companion` commands via the Monitor tool, not Bash.
 - Use built-in `codex-companion review` or `codex-companion adversarial-review` when the job is reviewing local git changes. Those prompts already carry the review contract.
 - Use `codex-companion task` when the task is diagnosis, planning, research, or implementation and more direct prompt control is needed.
 - Use `codex-companion task --resume-last` for follow-up instructions on the same Codex thread. Send only the delta instruction instead of restating the whole prompt unless the direction changed materially.
