@@ -2,7 +2,7 @@ export function getUsageText() {
   return `codex-companion — Codex reviews and tasks from Claude Code.
 Always start codex reviews and tasks via the Monitor tool, not Bash.
 
-Review commands:
+codex-companion subcommands:
 
   review [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--json]
          [--include-stderr] [--include-reasoning]
@@ -18,15 +18,27 @@ Review commands:
     Adversarial review of a plan file. Codex reads plan content and inspects referenced files.
     Use before exiting plan mode. --resume continues a prior review thread for the same file.
 
-Other commands (run codex-companion help <command> for details):
+  task [--write] [--resume <job-id>] [--resume-last] [--model <model>] [--effort <level>]
+       [--prompt-file <path>] [--include-stderr] [--json] [prompt]
+    Delegate a task to Codex: investigation, diagnosis, implementation, research.
+    Default is read-only; --write to allow edits. --resume continues a prior thread.
 
-  task      Delegate work to Codex (investigation, diagnosis, implementation).
-  status    Show running/recent Codex jobs.
-  result    Show output of a finished job.
-  cancel    Cancel an active Codex job.
-  setup     Check Codex installation and auth status.
+  status [job-id] [--all] [--workspace] [--json]
+  status <job-id> --wait [--timeout-ms <ms>] [--poll-interval-ms <ms>] [--json]
+    Show running/recent Codex jobs for this repository.
+    Pass a job-id for detailed single-job status; --wait polls until that job finishes.
 
-  help [command]   Show this text, or details for a specific command.`;
+  result [job-id] [--json]
+    Show the stored output of a finished Codex job.
+
+  cancel [job-id] [--json]
+    Cancel an active Codex job.
+
+  setup [--json]
+    Check whether Codex is installed, authenticated, and ready.
+
+  help [command]
+    Show this text, or details for a specific command.`;
 }
 
 export function getCommandHelp(command) {
