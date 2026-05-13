@@ -563,7 +563,6 @@ function createTrackedProgress(job, options = {}) {
   return {
     logFile,
     progress: createProgressReporter({
-      stderr: Boolean(options.stderr),
       logFile,
       onEvent: createJobProgressUpdater(job.workspaceRoot, job.id)
     })
@@ -611,12 +610,8 @@ function requireTaskRequest(prompt, hasResumeTarget) {
 }
 
 async function runForegroundCommand(job, runner, options = {}) {
-  if (options.includeStderr && options.json) {
-    throw new Error("--include-stderr and --json are incompatible.");
-  }
   const { logFile, progress } = createTrackedProgress(job, {
-    logFile: options.logFile,
-    stderr: Boolean(options.includeStderr)
+    logFile: options.logFile
   });
   const execution = await runTrackedJob(job, () => runner(progress), { logFile });
   outputResult(options.json ? execution.payload : execution.rendered, options.json);
@@ -692,7 +687,7 @@ async function executePlanReviewRun(request) {
 async function handlePlanReview(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "cwd"],
-    booleanOptions: ["include-stderr", "resume"],
+    booleanOptions: ["resume"],
     aliasMap: {
       m: "model"
     }
@@ -744,15 +739,14 @@ async function handlePlanReview(argv) {
         planContent,
         resumeThreadId,
         onProgress: progress
-      }),
-    { includeStderr: options["include-stderr"] }
+      })
   );
 }
 
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json", "include-stderr", "include-reasoning"],
+    booleanOptions: ["json", "include-reasoning"],
     aliasMap: {
       m: "model"
     }
@@ -789,7 +783,7 @@ async function handleReviewCommand(argv, config) {
         includeReasoning: Boolean(options["include-reasoning"]),
         onProgress: progress
       }),
-    { json: options.json, includeStderr: options["include-stderr"] }
+    { json: options.json }
   );
 }
 
@@ -800,43 +794,22 @@ async function handleReview(argv) {
   });
 }
 
-function rejectDeprecatedTaskFlag(token) {
-  if (token === "--fresh") {
-    throw new Error(
-      "--fresh has been removed. Omit it to start a new task; use --resume <job-id> or --resume-last to continue an existing one."
-    );
-  }
-  if (token === "--background") {
-    throw new Error(
-      "--background has been removed. Start Codex tasks via the Monitor tool; foreground tasks are still tracked via codex-companion status/result/cancel."
-    );
-  }
-}
-
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "cwd", "prompt-file", "resume"],
-    booleanOptions: ["json", "write", "resume-last", "include-stderr"],
+    booleanOptions: ["json", "write", "resume-last"],
     aliasMap: {
       m: "model"
     }
   });
 
-  // Catch removed control flags before they leak into the prompt. The args parser turns
-  // unknown `--foo` tokens into positionals (args.mjs:27-49), and a value option captures the
-  // next token even if it starts with `--`. Only reject the specific deprecated names — other
-  // flag-shaped tokens are legitimate parts of a free-form prompt.
   if (typeof options.resume === "string") {
-    rejectDeprecatedTaskFlag(options.resume);
     if (options.resume.startsWith("--")) {
       throw new Error(`Invalid --resume value ${options.resume}: expected a job id.`);
     }
     if (!options.resume.trim()) {
       throw new Error("--resume requires a job id.");
     }
-  }
-  for (const positional of positionals) {
-    rejectDeprecatedTaskFlag(positional);
   }
 
   const resumeJobId = typeof options.resume === "string" ? options.resume.trim() : null;
@@ -886,7 +859,7 @@ async function handleTask(argv) {
         jobId: job.id,
         onProgress: progress
       }),
-    { json: options.json, includeStderr: options["include-stderr"] }
+    { json: options.json }
   );
 }
 

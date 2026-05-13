@@ -704,50 +704,12 @@ test("task --resume <id> resumes a job from another Claude session", () => {
 test("task --resume rejects values that look like flags", () => {
   const repo = makeTempDir();
 
-  const fresh = run("node", [SCRIPT, "task", "--resume", "--fresh", "diagnose"], {
-    cwd: repo,
-    env: cleanEnv()
-  });
-  assert.equal(fresh.status, 1);
-  assert.match(fresh.stderr, /--fresh has been removed/);
-
-  const background = run("node", [SCRIPT, "task", "--resume", "--background", "diagnose"], {
-    cwd: repo,
-    env: cleanEnv()
-  });
-  assert.equal(background.status, 1);
-  assert.match(background.stderr, /--background has been removed/);
-
   const arbitrary = run("node", [SCRIPT, "task", "--resume", "--something", "diagnose"], {
     cwd: repo,
     env: cleanEnv()
   });
   assert.equal(arbitrary.status, 1);
   assert.match(arbitrary.stderr, /Invalid --resume value --something/);
-});
-
-test("task rejects --fresh as a positional and does not leak it into the prompt", () => {
-  const repo = makeTempDir();
-
-  const result = run("node", [SCRIPT, "task", "--fresh", "diagnose the flaky test"], {
-    cwd: repo,
-    env: cleanEnv()
-  });
-
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /--fresh has been removed/);
-});
-
-test("task rejects --background as a positional and does not leak it into the prompt", () => {
-  const repo = makeTempDir();
-
-  const result = run("node", [SCRIPT, "task", "--background", "diagnose the flaky test"], {
-    cwd: repo,
-    env: cleanEnv()
-  });
-
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /--background has been removed/);
 });
 
 test("task rejects combining --resume <id> with --resume-last", () => {

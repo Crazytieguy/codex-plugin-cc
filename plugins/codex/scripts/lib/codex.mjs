@@ -6,7 +6,7 @@
  * @typedef {import("./app-server-protocol").ThreadStartParams} ThreadStartParams
  * @typedef {import("./app-server-protocol").Turn} Turn
  * @typedef {import("./app-server-protocol").UserInput} UserInput
- * @typedef {((update: string | { message: string, phase: string | null, threadId?: string | null, turnId?: string | null, stderrMessage?: string | null, logTitle?: string | null, logBody?: string | null }) => void)} ProgressReporter
+ * @typedef {((update: string | { message: string, phase: string | null, threadId?: string | null, turnId?: string | null, logTitle?: string | null, logBody?: string | null }) => void)} ProgressReporter
  * @typedef {{
  *   threadId: string,
  *   rootThreadId: string,
@@ -201,7 +201,6 @@ function emitLogEvent(onProgress, options = {}) {
   onProgress({
     message: options.message ?? "",
     phase: options.phase ?? null,
-    stderrMessage: options.stderrMessage ?? null,
     logTitle: options.logTitle ?? null,
     logBody: options.logBody ?? null
   });
@@ -430,7 +429,6 @@ function recordItem(state, item, lifecycle, threadId = null) {
         const sourceLabel = labelForThread(state, threadId);
         emitLogEvent(state.onProgress, {
           message: sourceLabel ? `Subagent ${sourceLabel}: ${shorten(item.text, 96)}` : `Assistant message captured: ${shorten(item.text, 96)}`,
-          stderrMessage: null,
           phase: item.phase === "final_answer" ? "finalizing" : null,
           logTitle: sourceLabel ? `Subagent ${sourceLabel} message` : "Assistant message",
           logBody: item.text
@@ -445,7 +443,6 @@ function recordItem(state, item, lifecycle, threadId = null) {
     if (lifecycle === "completed" && item.review) {
       emitLogEvent(state.onProgress, {
         message: "Review output captured.",
-        stderrMessage: null,
         phase: "finalizing",
         logTitle: "Review output",
         logBody: item.review
@@ -463,7 +460,6 @@ function recordItem(state, item, lifecycle, threadId = null) {
         message: sourceLabel
           ? `Subagent ${sourceLabel} reasoning: ${shorten(nextSections[0], 96)}`
           : `Reasoning summary captured: ${shorten(nextSections[0], 96)}`,
-        stderrMessage: null,
         logTitle: sourceLabel ? `Subagent ${sourceLabel} reasoning summary` : "Reasoning summary",
         logBody: nextSections.map((section) => `- ${section}`).join("\n")
       });
