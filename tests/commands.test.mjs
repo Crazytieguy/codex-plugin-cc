@@ -36,8 +36,8 @@ test("hooks.json has only SessionStart and SessionEnd", () => {
   assert.deepEqual(events.sort(), ["SessionEnd", "SessionStart"]);
 });
 
-test("gpt-5-4-prompting skill references codex-companion task", () => {
-  const skill = read("skills/gpt-5-4-prompting/SKILL.md");
+test("codex-prompting skill references codex-companion task", () => {
+  const skill = read("skills/codex-prompting/SKILL.md");
   assert.doesNotMatch(skill, /rescue/i);
   assert.match(skill, /codex-companion task/);
 });
