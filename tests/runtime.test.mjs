@@ -66,11 +66,13 @@ test("setup is ready without npm when Codex is already installed and authenticat
 });
 
 test("setup trusts app-server API key auth even when login status alone would fail", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir, "api-key-account-only");
+  initGitRepo(repo);
 
   const result = run("node", [SCRIPT, "setup", "--json"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
@@ -84,11 +86,13 @@ test("setup trusts app-server API key auth even when login status alone would fa
 });
 
 test("setup is ready when the active provider does not require OpenAI login", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir, "provider-no-auth");
+  initGitRepo(repo);
 
   const result = run("node", [SCRIPT, "setup", "--json"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
@@ -102,11 +106,13 @@ test("setup is ready when the active provider does not require OpenAI login", ()
 });
 
 test("setup treats custom providers with app-server-ready config as ready", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir, "env-key-provider");
+  initGitRepo(repo);
 
   const result = run("node", [SCRIPT, "setup", "--json"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
@@ -120,11 +126,13 @@ test("setup treats custom providers with app-server-ready config as ready", () =
 });
 
 test("setup reports not ready when app-server config read fails", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir, "config-read-fails");
+  initGitRepo(repo);
 
   const result = run("node", [SCRIPT, "setup", "--json"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
