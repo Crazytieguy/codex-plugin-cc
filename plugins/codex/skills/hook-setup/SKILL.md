@@ -13,7 +13,9 @@ AI models from different providers have different strengths. OpenAI models are w
 
 ## Re-run Behavior
 
-Before starting, check `.claude/settings.local.json` for existing codex review hooks (PreToolUse hooks referencing codex-companion or plan-review scripts). If no hooks exist, proceed to the setup flow.
+Before starting, check whether `.claude/scripts/simplify-reminder.mjs` exists. If it does, the user has a legacy hook from before the /simplify → /code-review rename — read `references/migrate-from-simplify.md` and follow it. Do not proceed with the rest of this flow unless the user also wants to add or reconfigure other hooks.
+
+Otherwise, check `.claude/settings.local.json` for existing codex review hooks (PreToolUse hooks referencing codex-companion or plan-review scripts). If no hooks exist, proceed to the setup flow.
 
 If hooks exist, first check whether they're **worktree-safe** — either `.claude/scripts/` contains tracked files or `.worktreeinclude` at the repo root lists `.claude/scripts/` (see Step 3a for why this matters).
 
@@ -31,14 +33,14 @@ Explain the options and reasoning to the user:
 > There are three natural moments to trigger a Codex review:
 >
 > - **Plans** — Get adversarial feedback on your plan before exiting plan mode. Catches gaps, wrong assumptions, and missing steps early, when they're cheapest to fix.
-> - **Code on /simplify** — Run a Codex adversarial review in parallel with the other /simplify agents. Adds an independent perspective from a different model without extra effort.
+> - **Code on /code-review** — Run a Codex adversarial review in parallel with the other /code-review agents. Adds an independent perspective from a different model without extra effort.
 > - **Code before commit** — Review changes before they're committed. A reminder on `git add` nudges Claude to review; an enforcement hook on `git commit` blocks until a review is done.
 >
 > Pick any combination, or describe what you'd like instead.
 
 Use `AskUserQuestion` with multiSelect:
 - **Plans**
-- **Code on /simplify**
+- **Code on /code-review**
 - **Code before commit**
 
 If the user provides a custom answer instead of selecting options, use the templates as inspiration to build a hook matching their request. Check the Claude Code hooks documentation for the correct syntax, and offer to test live — new hooks in `settings.local.json` require a session restart to take effect.
@@ -92,7 +94,7 @@ Add hook entries to `.claude/settings.local.json` under the `hooks` key, pointin
 
 - **Plans + Reminders:** `plan-write-reminder.mjs`
 - **Plans + Enforced:** `plan-write-reminder.mjs` + `exit-plan-mode-enforce.mjs` (reminder on write, enforcement on ExitPlanMode)
-- **Code on /simplify:** `simplify-reminder.mjs` (reminder only, no enforcement variant)
+- **Code on /code-review:** `code-review-reminder.mjs` (reminder only, no enforcement variant)
 - **Code before commit + Reminders:** `git-add-reminder.mjs`
 - **Code before commit + Enforced:** `git-add-reminder.mjs` + `git-commit-enforce.mjs` (reminder on add, enforcement on commit)
 
@@ -130,7 +132,7 @@ Enforcement hooks that call `codex-companion` must be wrapped by `run-with-sessi
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/simplify-reminder.mjs\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/code-review-reminder.mjs\"",
             "timeout": 5
           }
         ]
@@ -160,7 +162,7 @@ Enforcement hooks that call `codex-companion` must be wrapped by `run-with-sessi
 #### Hook `if` Patterns
 
 - `"if": "Write(*/.claude/plans/*.md)"` — Write to plan files
-- `"matcher": "Skill"` — Skill invocations (no `if` — `Skill(simplify)` pattern doesn't work; use self-validation in the script instead)
+- `"matcher": "Skill"` — Skill invocations (no `if` — `Skill(code-review)` pattern doesn't work; use self-validation in the script instead)
 - `"if": "Bash(git add *)"` — git add commands
 - `"if": "Bash(git commit:*)"` — git commit commands (`:*` for heredoc compatibility)
 - `"matcher": "ExitPlanMode"` — ExitPlanMode (no `if` needed, matcher suffices)
@@ -172,7 +174,7 @@ Note: The `if` field may not filter reliably in all contexts. Enforcement and re
 Working hook scripts in `templates/`, ready to use as-is:
 
 - **`plan-write-reminder.mjs`** — Reminder when writing plan files
-- **`simplify-reminder.mjs`** — Reminder when invoking /simplify
+- **`code-review-reminder.mjs`** — Reminder when invoking /code-review
 - **`git-add-reminder.mjs`** — Reminder when staging files
 - **`exit-plan-mode-enforce.mjs`** — Block ExitPlanMode without completed plan review
 - **`git-commit-enforce.mjs`** — Block git commit without completed code review

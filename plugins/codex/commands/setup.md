@@ -47,7 +47,7 @@ Then check if codex review hooks are already configured in `.claude/settings.loc
 
 Output this explanation verbatim:
 
-**Review hooks** let Claude automatically get Codex feedback at key moments — when writing a plan, running /simplify, or before committing code.
+**Review hooks** let Claude automatically get Codex feedback at key moments — when writing a plan, running /code-review, or before committing code.
 
 Without hooks, Codex reviews only happen when you or Claude explicitly request them. This gives you full control but means more manual involvement — you'll need to remember to ask for reviews at the right times.
 

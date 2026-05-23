@@ -45,7 +45,7 @@ test("codex-prompting skill references codex-companion task", () => {
 test("hook-setup skill exists with templates", () => {
   assert.ok(exists("skills/hook-setup/SKILL.md"));
   assert.ok(exists("skills/hook-setup/templates/plan-write-reminder.mjs"));
-  assert.ok(exists("skills/hook-setup/templates/simplify-reminder.mjs"));
+  assert.ok(exists("skills/hook-setup/templates/code-review-reminder.mjs"));
   assert.ok(exists("skills/hook-setup/templates/git-add-reminder.mjs"));
   assert.ok(exists("skills/hook-setup/templates/exit-plan-mode-enforce.mjs"));
   assert.ok(exists("skills/hook-setup/templates/git-commit-enforce.mjs"));

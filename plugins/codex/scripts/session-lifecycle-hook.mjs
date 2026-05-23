@@ -112,7 +112,14 @@ function handleSessionStart(input) {
   const setupRanFile = pluginDataDir ? path.join(pluginDataDir, "setup-ran") : null;
   const setupRan = setupRanFile && fs.existsSync(setupRanFile);
 
-  const statusMsg = setupRan
+  // The /simplify skill was renamed to /code-review; old hook scripts no longer fire.
+  // Remove this check a release or two after 1.0.19.
+  const staleScript = path.join(cwd, ".claude", "scripts", "simplify-reminder.mjs");
+  const hooksOutdated = fs.existsSync(staleScript);
+
+  const statusMsg = hooksOutdated
+    ? "\u001b[1;34mcodex:\u001b[0m hook scripts out of date (/simplify renamed to /code-review), re-run \u001b[1;35m/codex:setup\u001b[0m"
+    : setupRan
     ? "\u001b[1;34mcodex:\u001b[0m available"
     : "\u001b[1;34mcodex:\u001b[0m run \u001b[1;35m/codex:setup\u001b[0m to configure";
 
