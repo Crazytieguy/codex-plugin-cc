@@ -9,19 +9,6 @@ import { parseArgs } from "./lib/args.mjs";
 import { BROKER_BUSY_RPC_CODE, CodexAppServerClient } from "./lib/app-server.mjs";
 import { parseBrokerEndpoint } from "./lib/broker-endpoint.mjs";
 
-const STREAMING_METHODS = new Set(["turn/start", "review/start", "thread/compact/start"]);
-
-function buildStreamThreadIds(method, params, result) {
-  const threadIds = new Set();
-  if (params?.threadId) {
-    threadIds.add(params.threadId);
-  }
-  if (method === "review/start" && result?.reviewThreadId) {
-    threadIds.add(result.reviewThreadId);
-  }
-  return threadIds;
-}
-
 function buildJsonRpcError(code, message, data) {
   return data === undefined ? { code, message } : { code, message, data };
 }
@@ -31,10 +18,6 @@ function send(socket, message) {
     return;
   }
   socket.write(`${JSON.stringify(message)}\n`);
-}
-
-function isInterruptRequest(message) {
-  return message?.method === "turn/interrupt";
 }
 
 function writePidFile(pidFile) {
@@ -66,40 +49,37 @@ async function main() {
   writePidFile(pidFile);
 
   const appClient = await CodexAppServerClient.connect(cwd, { disableBroker: true });
-  let activeRequestSocket = null;
-  let activeStreamSocket = null;
-  let activeStreamThreadIds = null;
   const sockets = new Set();
 
-  function clearSocketOwnership(socket) {
-    if (activeRequestSocket === socket) {
-      activeRequestSocket = null;
-    }
-    if (activeStreamSocket === socket) {
-      activeStreamSocket = null;
-      activeStreamThreadIds = null;
-    }
+  // The broker forwards one streaming turn at a time. While `activeStream` is
+  // set, only its owning socket may send non-interrupt requests; everyone else
+  // gets BROKER_BUSY and the `withAppServer` fallback spawns a direct AppServer.
+  let activeStream = null;
+  // Shape: { socket, threadIds: Set<string>, primaryThreadId: string, turnId: string }
+
+  function clearActiveStream() {
+    activeStream = null;
   }
 
   function routeNotification(message) {
-    const target = activeRequestSocket ?? activeStreamSocket;
-    if (!target) {
+    if (!activeStream) {
       return;
     }
-    send(target, message);
-    if (message.method === "turn/completed" && activeStreamSocket === target) {
+    send(activeStream.socket, message);
+    if (message.method === "turn/completed") {
       const threadId = message.params?.threadId ?? null;
-      if (!threadId || !activeStreamThreadIds || activeStreamThreadIds.has(threadId)) {
-        activeStreamSocket = null;
-        activeStreamThreadIds = null;
-        if (activeRequestSocket === target) {
-          activeRequestSocket = null;
-        }
+      if (threadId && activeStream.threadIds.has(threadId)) {
+        clearActiveStream();
       }
     }
   }
 
+  let shuttingDown = false;
   async function shutdown(server) {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     for (const socket of sockets) {
       socket.end();
     }
@@ -119,8 +99,109 @@ async function main() {
     sockets.add(socket);
     socket.setEncoding("utf8");
     let buffer = "";
+    let pending = Promise.resolve();
 
-    socket.on("data", async (chunk) => {
+    function enqueue(work) {
+      pending = pending.then(work).catch(() => {});
+    }
+
+    async function handleMessage(message) {
+      if (message.id !== undefined && message.method === "initialize") {
+        send(socket, {
+          id: message.id,
+          result: { userAgent: "codex-companion-broker" }
+        });
+        return;
+      }
+
+      if (message.method === "initialized" && message.id === undefined) {
+        return;
+      }
+
+      if (message.id !== undefined && message.method === "broker/shutdown") {
+        send(socket, { id: message.id, result: {} });
+        await shutdown(server);
+        process.exit(0);
+      }
+
+      if (message.id === undefined) {
+        return;
+      }
+
+      // turn/interrupt is idempotent on the AppServer; always forward.
+      if (message.method === "turn/interrupt") {
+        try {
+          const result = await appClient.request(message.method, message.params ?? {});
+          send(socket, { id: message.id, result });
+        } catch (error) {
+          send(socket, {
+            id: message.id,
+            error: buildJsonRpcError(error.rpcCode ?? -32000, error.message)
+          });
+        }
+        return;
+      }
+
+      if (activeStream && activeStream.socket !== socket) {
+        send(socket, {
+          id: message.id,
+          error: buildJsonRpcError(BROKER_BUSY_RPC_CODE, "Shared Codex broker is busy.")
+        });
+        return;
+      }
+
+      // Reserve the slot before awaiting the upstream request, otherwise a
+      // request from another socket can pass the busy check while this one is
+      // still in flight and both end up sharing the AppServer.
+      let reservation = null;
+      if (!activeStream) {
+        reservation = { socket, threadIds: new Set(), primaryThreadId: null, turnId: null };
+        activeStream = reservation;
+      }
+
+      try {
+        const params = message.params ?? {};
+        const result = await appClient.request(message.method, params);
+        send(socket, { id: message.id, result });
+
+        const turn = result?.turn;
+        if (turn?.id && turn?.status === "inProgress") {
+          const primaryThreadId =
+            message.method === "review/start" && result.reviewThreadId
+              ? result.reviewThreadId
+              : params.threadId ?? null;
+          const threadIds = new Set();
+          if (params.threadId) {
+            threadIds.add(params.threadId);
+          }
+          if (result.reviewThreadId) {
+            threadIds.add(result.reviewThreadId);
+          }
+          if (primaryThreadId) {
+            activeStream = {
+              socket,
+              threadIds,
+              primaryThreadId,
+              turnId: turn.id
+            };
+          }
+        }
+      } catch (error) {
+        send(socket, {
+          id: message.id,
+          error: buildJsonRpcError(error.rpcCode ?? -32000, error.message)
+        });
+      } finally {
+        // Release the reservation unless this request started a streaming
+        // turn (which replaced it). Without this, the first non-streaming
+        // request would lock the broker to its socket forever.
+        if (reservation && activeStream === reservation) {
+          clearActiveStream();
+        }
+      }
+    }
+
+    socket.on("data", (chunk) => {
       buffer += chunk;
       let newlineIndex = buffer.indexOf("\n");
       while (newlineIndex !== -1) {
@@ -143,94 +224,29 @@ async function main() {
           continue;
         }
 
-        if (message.id !== undefined && message.method === "initialize") {
-          send(socket, {
-            id: message.id,
-            result: {
-              userAgent: "codex-companion-broker"
-            }
-          });
-          continue;
-        }
-
-        if (message.method === "initialized" && message.id === undefined) {
-          continue;
-        }
-
-        if (message.id !== undefined && message.method === "broker/shutdown") {
-          send(socket, { id: message.id, result: {} });
-          await shutdown(server);
-          process.exit(0);
-        }
-
-        if (message.id === undefined) {
-          continue;
-        }
-
-        const allowInterruptDuringActiveStream =
-          isInterruptRequest(message) && activeStreamSocket && activeStreamSocket !== socket && !activeRequestSocket;
-
-        if (
-          ((activeRequestSocket && activeRequestSocket !== socket) || (activeStreamSocket && activeStreamSocket !== socket)) &&
-          !allowInterruptDuringActiveStream
-        ) {
-          send(socket, {
-            id: message.id,
-            error: buildJsonRpcError(BROKER_BUSY_RPC_CODE, "Shared Codex broker is busy.")
-          });
-          continue;
-        }
-
-        if (allowInterruptDuringActiveStream) {
-          try {
-            const result = await appClient.request(message.method, message.params ?? {});
-            send(socket, { id: message.id, result });
-          } catch (error) {
-            send(socket, {
-              id: message.id,
-              error: buildJsonRpcError(error.rpcCode ?? -32000, error.message)
-            });
-          }
-          continue;
-        }
-
-        const isStreaming = STREAMING_METHODS.has(message.method);
-        activeRequestSocket = socket;
-
-        try {
-          const result = await appClient.request(message.method, message.params ?? {});
-          send(socket, { id: message.id, result });
-          if (isStreaming) {
-            activeStreamSocket = socket;
-            activeStreamThreadIds = buildStreamThreadIds(message.method, message.params ?? {}, result);
-          }
-          if (activeRequestSocket === socket) {
-            activeRequestSocket = null;
-          }
-        } catch (error) {
-          send(socket, {
-            id: message.id,
-            error: buildJsonRpcError(error.rpcCode ?? -32000, error.message)
-          });
-          if (activeRequestSocket === socket) {
-            activeRequestSocket = null;
-          }
-          if (activeStreamSocket === socket && !isStreaming) {
-            activeStreamSocket = null;
-          }
-        }
+        enqueue(() => handleMessage(message));
       }
     });
 
-    socket.on("close", () => {
+    function handleSocketClose() {
       sockets.delete(socket);
-      clearSocketOwnership(socket);
-    });
+      if (activeStream && activeStream.socket === socket) {
+        const { primaryThreadId, turnId } = activeStream;
+        clearActiveStream();
+        // Best-effort: tell the AppServer the in-flight turn is abandoned so it
+        // doesn't keep running an orphan after the client disappears. A bare
+        // reservation (request still in flight, no turn yet) has nothing to
+        // interrupt.
+        if (primaryThreadId && turnId) {
+          appClient
+            .request("turn/interrupt", { threadId: primaryThreadId, turnId })
+            .catch(() => {});
+        }
+      }
+    }
 
-    socket.on("error", () => {
-      sockets.delete(socket);
-      clearSocketOwnership(socket);
-    });
+    socket.on("close", handleSocketClose);
+    socket.on("error", handleSocketClose);
   });
 
   process.on("SIGTERM", async () => {
@@ -241,6 +257,16 @@ async function main() {
   process.on("SIGINT", async () => {
     await shutdown(server);
     process.exit(0);
+  });
+
+  // If the upstream AppServer dies, the broker has nothing to do. Exit so the
+  // next client respawns a fresh broker (ensureBrokerSession detects the dead
+  // endpoint, tears down stale state, and spawns again).
+  appClient.exitPromise.then(() => {
+    if (shuttingDown) {
+      return;
+    }
+    shutdown(server).finally(() => process.exit(1));
   });
 
   server.listen(listenTarget.path);
