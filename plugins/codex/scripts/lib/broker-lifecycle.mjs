@@ -40,6 +40,7 @@ export async function waitForBrokerEndpoint(endpoint, timeoutMs = 2000) {
   return false;
 }
 
+/** @param {string} endpoint @param {{ timeoutMs?: number }} [options] */
 export async function sendBrokerShutdown(endpoint, { timeoutMs } = {}) {
   await new Promise((resolve) => {
     const socket = connectToEndpoint(endpoint);
