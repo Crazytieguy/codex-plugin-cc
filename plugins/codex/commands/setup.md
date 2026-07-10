@@ -9,20 +9,23 @@ Output of `codex-companion setup --json`:
 
 ---
 
-Use the output above to determine the current state. The JSON includes `ready` (boolean), `node.available`, `npm.available`, `codex.available`, `auth.loggedIn`, and `nextSteps`.
+Use the output above to determine the current state. The JSON includes `ready` (boolean), `node.available`, `codex.available`, `auth.loggedIn`, and `nextSteps`.
 
 Follow the first matching path:
 
 **If the output has `"error": true` or `node.available` is false:**
-Tell the user to install Node.js 18.18+ and rerun `/codex:setup`.
+Node.js is missing. Run `command -v codex` to check whether Codex is also missing.
+Briefly explain what's needed: Node.js 18.18+ runs the plugin's companion scripts, and (if missing) the Codex CLI is what performs reviews. Then ask a single `AskUserQuestion` covering everything missing — options: `Install Node and Codex (Recommended)` (or `Install Node (Recommended)` if Codex is present), `Skip for now`.
+- If install:
+  - Node: if `command -v brew` succeeds, run `brew install node`. Otherwise, give the user the exact package-manager command to run in a separate terminal (Claude's shell is non-interactive, so sudo password prompts can't work) — or point to https://nodejs.org if there's no package manager — and wait for them to say they're done before continuing.
+  - Codex (if missing): run `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh`.
+  - Then run `export PATH="$HOME/.local/bin:$PATH" && node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json` (the installer updates shell rc files, but the current session's PATH may predate that) and continue down this decision tree with the new output.
+- If skip: tell the user to install Node.js 18.18+ (and Codex if missing), then rerun `/codex:setup`, and stop.
 
-**If `codex.available` is false and `npm.available` is true:**
-Use `AskUserQuestion` with options: `Install Codex (Recommended)`, `Skip for now`
-- If install: run `npm install -g @openai/codex`, then rerun `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json` and present the updated result.
-- If skip: present the setup output and stop.
-
-**If `codex.available` is false and `npm.available` is false:**
-Tell the user to install npm (or install Codex manually with `npm install -g @openai/codex`) and rerun `/codex:setup`.
+**If `codex.available` is false:**
+Briefly explain that the Codex CLI is what performs reviews, then use `AskUserQuestion` with options: `Install Codex (Recommended)`, `Skip for now`
+- If install: run `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh`, then run `export PATH="$HOME/.local/bin:$PATH" && node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" setup --json` and continue down this decision tree with the new output.
+- If skip: present the setup output, mention the manual alternatives (`npm install -g @openai/codex` or `brew install --cask codex`), and stop.
 
 **If `auth.loggedIn` is false:**
 Tell the user to run `!codex login` and then rerun `/codex:setup`.
