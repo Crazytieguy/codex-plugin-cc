@@ -987,14 +987,22 @@ async function handleCancel(argv) {
     ...nextJob,
     cancelledAt: completedAt
   });
-  upsertJob(workspaceRoot, {
-    id: job.id,
-    status: "cancelled",
-    phase: "cancelled",
-    pid: null,
-    errorMessage: "Cancelled by user.",
-    completedAt
-  });
+  try {
+    upsertJob(workspaceRoot, {
+      id: job.id,
+      status: "cancelled",
+      phase: "cancelled",
+      pid: null,
+      errorMessage: "Cancelled by user.",
+      completedAt
+    });
+  } catch (error) {
+    // The cancel itself fully happened (turn interrupted, process killed,
+    // job file written) — a state-lock timeout on the index update must not
+    // make the command report failure.
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`codex-companion: cancelled, but the state index could not be updated: ${message}\n`);
+  }
 
   const payload = {
     jobId: job.id,

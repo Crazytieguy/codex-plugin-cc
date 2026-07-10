@@ -71,7 +71,13 @@ async function waitFor(predicate, { timeoutMs = 2000, intervalMs = 25 } = {}) {
 function readFakeState(binDir) {
   const statePath = path.join(binDir, "fake-codex-state.json");
   if (!fs.existsSync(statePath)) return null;
-  return JSON.parse(fs.readFileSync(statePath, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(statePath, "utf8"));
+  } catch {
+    // The fake codex writes non-atomically; a poll can catch a torn write.
+    // Treat it as "not ready yet" so waitFor retries.
+    return null;
+  }
 }
 
 async function withBroker(behavior, fn) {
@@ -116,12 +122,11 @@ test("broker forwards turn/interrupt when streaming client disconnects mid-strea
     // the upstream AppServer so it doesn't keep running an orphaned turn.
     socket.destroy();
 
-    await waitFor(() => {
-      const state = readFakeState(binDir);
-      return state?.lastInterrupt?.turnId === turnId ? state : null;
+    const state = await waitFor(() => {
+      const candidate = readFakeState(binDir);
+      return candidate?.lastInterrupt?.turnId === turnId ? candidate : null;
     });
 
-    const state = readFakeState(binDir);
     assert.equal(state.lastInterrupt.threadId, threadId);
     assert.equal(state.lastInterrupt.turnId, turnId);
   });

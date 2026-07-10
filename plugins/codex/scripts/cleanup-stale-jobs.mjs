@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { loadState, resolveStateDir, saveState } from "./lib/state.mjs";
+import { loadState, updateState } from "./lib/state.mjs";
 
 function readHookInput() {
   try {
@@ -32,60 +32,6 @@ function collectTranscriptSessionIds(transcriptDir) {
   return ids;
 }
 
-function acquireLock(lockPath) {
-  while (true) {
-    try {
-      fs.writeFileSync(lockPath, String(process.pid), { flag: "wx" });
-      return true;
-    } catch (err) {
-      if (err.code !== "EEXIST") {
-        return false;
-      }
-    }
-
-    let holderPid;
-    try {
-      holderPid = Number.parseInt(fs.readFileSync(lockPath, "utf8").trim(), 10);
-    } catch {
-      // Lock disappeared between EEXIST and read — try again.
-      continue;
-    }
-
-    if (!Number.isFinite(holderPid) || holderPid <= 0) {
-      try {
-        fs.unlinkSync(lockPath);
-      } catch {
-        return false;
-      }
-      continue;
-    }
-
-    try {
-      process.kill(holderPid, 0);
-      // Holder is alive — another cleanup is running.
-      return false;
-    } catch (err) {
-      if (err.code === "ESRCH") {
-        try {
-          fs.unlinkSync(lockPath);
-        } catch {
-          return false;
-        }
-        continue;
-      }
-      return false;
-    }
-  }
-}
-
-function releaseLock(lockPath) {
-  try {
-    fs.unlinkSync(lockPath);
-  } catch {
-    // Best effort.
-  }
-}
-
 function main() {
   const input = readHookInput();
   const transcriptPath = input.transcript_path;
@@ -102,30 +48,26 @@ function main() {
     return;
   }
 
-  const stateDir = resolveStateDir(cwd);
-  const lockPath = path.join(stateDir, "cleanup.lock");
+  const isStale = (job) => job.sessionId && !validSessionIds.has(job.sessionId);
 
-  try {
-    fs.mkdirSync(stateDir, { recursive: true });
-  } catch {
-    return;
-  }
-
-  if (!acquireLock(lockPath)) {
+  // Unlocked pre-check keeps the common no-op case free of lock traffic and
+  // state.json rewrites; the filter is re-applied under the lock.
+  if (!loadState(cwd).jobs.some(isStale)) {
     return;
   }
 
   try {
-    const state = loadState(cwd);
-    const filteredJobs = state.jobs.filter(
-      (job) => !job.sessionId || validSessionIds.has(job.sessionId)
+    updateState(
+      cwd,
+      (state) => {
+        state.jobs = state.jobs.filter((job) => !isStale(job));
+      },
+      // Don't stall SessionStart on a busy lock — a skipped round reruns on
+      // the next session start.
+      { timeoutMs: 1000 }
     );
-    if (filteredJobs.length === state.jobs.length) {
-      return;
-    }
-    saveState(cwd, { ...state, jobs: filteredJobs });
-  } finally {
-    releaseLock(lockPath);
+  } catch {
+    // Lock still contended after the wait — skip this round.
   }
 }
 

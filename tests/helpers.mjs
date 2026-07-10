@@ -58,7 +58,7 @@ export function initGitRepo(cwd) {
   run("git", ["config", "tag.gpgsign", "false"], { cwd });
 }
 
-function isPidAlive(pid) {
+export function isPidAlive(pid) {
   if (!Number.isFinite(pid)) {
     return false;
   }
@@ -68,6 +68,17 @@ function isPidAlive(pid) {
   } catch (error) {
     return error?.code !== "ESRCH";
   }
+}
+
+/** Poll `predicate` until it returns a truthy value or the timeout elapses. */
+export async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 25 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const value = await predicate();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("Timed out waiting for condition.");
 }
 
 /**

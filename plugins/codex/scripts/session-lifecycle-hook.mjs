@@ -6,23 +6,27 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { terminateProcessTree } from "./lib/process.mjs";
-import { BROKER_ENDPOINT_ENV } from "./lib/app-server.mjs";
-import {
-  clearBrokerSession,
-  LOG_FILE_ENV,
-  loadBrokerSession,
-  PID_FILE_ENV,
-  sendBrokerShutdown,
-  teardownBrokerSession
-} from "./lib/broker-lifecycle.mjs";
 import { getCodexAvailability } from "./lib/codex.mjs";
 import { getUsageText } from "./lib/help.mjs";
-import { loadState } from "./lib/state.mjs";
+import { loadState, readJobFile, resolveJobFile } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 export const SESSION_ID_ENV = "CODEX_COMPANION_SESSION_ID";
 const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+// Documented SessionEnd reasons that mean the session is genuinely over.
+// SessionEnd also fires when a session is merely saved for later resumption
+// (reason "resume"), and background-session supervisor kills are undocumented
+// (likely "other") — fail closed and leave jobs running for those. Job
+// processes are single-task and self-terminating, so a skipped termination
+// only means a job runs to natural completion.
+const FINAL_SESSION_END_REASONS = new Set([
+  "clear",
+  "logout",
+  "prompt_input_exit",
+  "bypass_permissions_disabled"
+]);
 
 function readHookInput() {
   const raw = fs.readFileSync(0, "utf8").trim();
@@ -68,6 +72,17 @@ function terminateSessionProcesses(cwd, sessionId) {
     // "queued" is legacy from pre-1.0.12 --background workers; still terminate any orphan PID.
     if (job.status !== "running" && job.status !== "queued") {
       continue;
+    }
+    // The index can miss a completion update (lock contention at job end).
+    // Don't signal a pid whose job file already shows a terminal state — the
+    // worker exited and the OS may have recycled its pid.
+    try {
+      const storedStatus = readJobFile(resolveJobFile(workspaceRoot, job.id))?.status ?? null;
+      if (storedStatus && storedStatus !== "running" && storedStatus !== "queued") {
+        continue;
+      }
+    } catch {
+      // No job file or unreadable — fall through to terminate.
     }
     try {
       terminateProcessTree(job.pid ?? Number.NaN);
@@ -138,37 +153,16 @@ function handleSessionStart(input) {
   process.stdout.write(`${JSON.stringify(output)}\n`);
 }
 
-async function handleSessionEnd(input) {
-  const cwd = input.cwd || process.cwd();
-  const brokerSession =
-    loadBrokerSession(cwd) ??
-    (process.env[BROKER_ENDPOINT_ENV]
-      ? {
-          endpoint: process.env[BROKER_ENDPOINT_ENV],
-          pidFile: process.env[PID_FILE_ENV] ?? null,
-          logFile: process.env[LOG_FILE_ENV] ?? null
-        }
-      : null);
-  const brokerEndpoint = brokerSession?.endpoint ?? null;
-  const pidFile = brokerSession?.pidFile ?? null;
-  const logFile = brokerSession?.logFile ?? null;
-  const sessionDir = brokerSession?.sessionDir ?? null;
-  const pid = brokerSession?.pid ?? null;
-
-  if (brokerEndpoint) {
-    await sendBrokerShutdown(brokerEndpoint);
+function handleSessionEnd(input) {
+  // The workspace-shared broker is deliberately NOT touched here: SessionEnd
+  // fires for sessions that aren't done and never fires for others, and other
+  // live sessions may be streaming through the broker. The broker reaps itself
+  // via its idle timeout (see app-server-broker.mjs).
+  if (!FINAL_SESSION_END_REASONS.has(input.reason)) {
+    return;
   }
-
+  const cwd = input.cwd || process.cwd();
   terminateSessionProcesses(cwd, input.session_id || process.env[SESSION_ID_ENV]);
-  teardownBrokerSession({
-    endpoint: brokerEndpoint,
-    pidFile,
-    logFile,
-    sessionDir,
-    pid,
-    killProcess: terminateProcessTree
-  });
-  clearBrokerSession(cwd);
 }
 
 async function main() {
@@ -181,7 +175,7 @@ async function main() {
   }
 
   if (eventName === "SessionEnd") {
-    await handleSessionEnd(input);
+    handleSessionEnd(input);
   }
 }
 

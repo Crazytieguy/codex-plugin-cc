@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { writeFileAtomic } from "./fs.mjs";
+import { acquirePidLockSync } from "./lockfile.mjs";
 import { resolveWorkspaceRoot } from "./workspace.mjs";
 
 const STATE_VERSION = 1;
@@ -10,6 +12,8 @@ const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const FALLBACK_STATE_ROOT_DIR = path.join(os.tmpdir(), "codex-companion");
 const STATE_FILE_NAME = "state.json";
 const JOBS_DIR_NAME = "jobs";
+const STATE_LOCK_FILE_NAME = "state.lock";
+const LOCK_TIMEOUT_MS = 5000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -52,6 +56,33 @@ export function ensureStateDir(cwd) {
   fs.mkdirSync(resolveJobsDir(cwd), { recursive: true });
 }
 
+export { writeFileAtomic };
+
+function defaultLockTimeoutMs() {
+  const raw = Number.parseInt(process.env.CODEX_COMPANION_STATE_LOCK_TIMEOUT_MS ?? "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : LOCK_TIMEOUT_MS;
+}
+
+/**
+ * Run `fn` while holding the workspace state lock. Serializes all state.json
+ * mutations across concurrent codex-companion processes (multiple Claude
+ * sessions in one workspace). Throws if the lock cannot be acquired in time —
+ * callers must never mutate state unlocked (an unlocked load-mutate-write can
+ * resurrect deleted jobs or delete live job files).
+ */
+export function withStateLock(cwd, fn, options = {}) {
+  const stateDir = resolveStateDir(cwd);
+  fs.mkdirSync(path.join(stateDir, JOBS_DIR_NAME), { recursive: true });
+  const release = acquirePidLockSync(path.join(stateDir, STATE_LOCK_FILE_NAME), {
+    timeoutMs: options.timeoutMs ?? defaultLockTimeoutMs()
+  });
+  try {
+    return fn();
+  } finally {
+    release();
+  }
+}
+
 export function loadState(cwd) {
   const stateFile = resolveStateFile(cwd);
   if (!fs.existsSync(stateFile)) {
@@ -80,8 +111,8 @@ function removeFileIfExists(filePath) {
   }
 }
 
-export function saveState(cwd, state) {
-  const previousJobs = loadState(cwd).jobs;
+function saveStateLocked(cwd, state, previousJobs = null) {
+  const priorJobs = previousJobs ?? loadState(cwd).jobs;
   ensureStateDir(cwd);
   const nextJobs = state.jobs ?? [];
   const nextState = {
@@ -94,7 +125,7 @@ export function saveState(cwd, state) {
   };
 
   const retainedIds = new Set(nextJobs.map((job) => job.id));
-  for (const job of previousJobs) {
+  for (const job of priorJobs) {
     if (retainedIds.has(job.id)) {
       continue;
     }
@@ -102,14 +133,25 @@ export function saveState(cwd, state) {
     removeFileIfExists(job.logFile);
   }
 
-  fs.writeFileSync(resolveStateFile(cwd), `${JSON.stringify(nextState, null, 2)}\n`, "utf8");
+  writeFileAtomic(resolveStateFile(cwd), `${JSON.stringify(nextState, null, 2)}\n`);
   return nextState;
 }
 
-export function updateState(cwd, mutate) {
-  const state = loadState(cwd);
-  mutate(state);
-  return saveState(cwd, state);
+export function saveState(cwd, state, options = {}) {
+  return withStateLock(cwd, () => saveStateLocked(cwd, state), options);
+}
+
+export function updateState(cwd, mutate, options = {}) {
+  return withStateLock(
+    cwd,
+    () => {
+      const state = loadState(cwd);
+      const previousJobs = state.jobs.slice();
+      mutate(state);
+      return saveStateLocked(cwd, state, previousJobs);
+    },
+    options
+  );
 }
 
 export function generateJobId(prefix = "job") {
@@ -157,7 +199,7 @@ export function getConfig(cwd) {
 export function writeJobFile(cwd, jobId, payload) {
   ensureStateDir(cwd);
   const jobFile = resolveJobFile(cwd, jobId);
-  fs.writeFileSync(jobFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  writeFileAtomic(jobFile, `${JSON.stringify(payload, null, 2)}\n`);
   return jobFile;
 }
 

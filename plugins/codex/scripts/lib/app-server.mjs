@@ -168,8 +168,16 @@ class AppServerClientBase {
     this.exitResolved = true;
     this.exitError = error ?? null;
 
+    const rejection = this.exitError ?? new Error("codex app-server connection closed.");
+    if (rejection instanceof Error) {
+      // Mark connection-level failures so withAppServer can distinguish "the
+      // broker went away" (retry against a direct app-server — it can exit at
+      // any moment by design, e.g. its idle timeout) from RPC-level errors.
+      rejection.connectionLost = true;
+      rejection.transport = this.transport;
+    }
     for (const pending of this.pending.values()) {
-      pending.reject(this.exitError ?? new Error("codex app-server connection closed."));
+      pending.reject(rejection);
     }
     this.pending.clear();
     this.resolveExit(undefined);

@@ -34,10 +34,13 @@
  *   onProgress: ProgressReporter | null
  * }} TurnCaptureState
  */
+import fs from "node:fs";
+
 import { readJsonFile } from "./fs.mjs";
 import { BROKER_BUSY_RPC_CODE, BROKER_ENDPOINT_ENV, CodexAppServerClient } from "./app-server.mjs";
+import { parseBrokerEndpoint } from "./broker-endpoint.mjs";
 import { loadBrokerSession } from "./broker-lifecycle.mjs";
-import { binaryAvailable } from "./process.mjs";
+import { binaryAvailable, isPidAlive } from "./process.mjs";
 
 const SERVICE_NAME = "claude_code_codex_plugin";
 const TASK_THREAD_PREFIX = "Codex Companion Task";
@@ -607,7 +610,11 @@ async function withAppServer(cwd, fn) {
     const brokerRequested = client?.transport === "broker" || Boolean(process.env[BROKER_ENDPOINT_ENV]);
     const shouldRetryDirect =
       (client?.transport === "broker" && error?.rpcCode === BROKER_BUSY_RPC_CODE) ||
-      (brokerRequested && (error?.code === "ENOENT" || error?.code === "ECONNREFUSED"));
+      (brokerRequested && (error?.code === "ENOENT" || error?.code === "ECONNREFUSED")) ||
+      // The broker may exit at any moment by design (idle timeout, upstream
+      // app-server death). A dropped broker connection — even mid-connect,
+      // before `client` is assigned — degrades to a direct app-server.
+      (error?.connectionLost === true && error?.transport === "broker");
 
     if (client) {
       await client.close().catch(() => {});
@@ -801,8 +808,33 @@ export function getCodexAvailability(cwd) {
   };
 }
 
+function brokerLooksLive({ endpoint, pid = null }) {
+  if (!endpoint) {
+    return false;
+  }
+  // A recorded pid catches brokers that died without cleanup (SIGKILL leaves
+  // the socket file behind); the socket check catches clean (idle) exits,
+  // which unlink it. Non-unix endpoints can't be file-checked synchronously.
+  if (pid != null && !isPidAlive(pid)) {
+    return false;
+  }
+  try {
+    const target = parseBrokerEndpoint(endpoint);
+    return target.kind !== "unix" || fs.existsSync(target.path);
+  } catch {
+    return false;
+  }
+}
+
 export function getSessionRuntimeStatus(env = process.env, cwd = process.cwd()) {
-  const endpoint = env?.[BROKER_ENDPOINT_ENV] ?? loadBrokerSession(cwd)?.endpoint ?? null;
+  const brokerSession = loadBrokerSession(cwd);
+  // A dead env-provided endpoint must not mask a live broker recorded in
+  // broker.json — check each candidate and take the first that looks live.
+  const candidates = [
+    { endpoint: env?.[BROKER_ENDPOINT_ENV] ?? null },
+    { endpoint: brokerSession?.endpoint ?? null, pid: brokerSession?.pid ?? null }
+  ];
+  const endpoint = candidates.find(brokerLooksLive)?.endpoint ?? null;
   if (endpoint) {
     return {
       mode: "shared",

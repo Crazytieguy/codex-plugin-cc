@@ -1,12 +1,54 @@
 import fs from "node:fs";
 
 import { getSessionRuntimeStatus } from "./codex.mjs";
-import { listJobs, readJobFile, resolveJobFile } from "./state.mjs";
+import { listJobs, readJobFile, resolveJobFile, upsertJob } from "./state.mjs";
 import { SESSION_ID_ENV } from "./tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./workspace.mjs";
 
 export const DEFAULT_MAX_STATUS_JOBS = 8;
 export const DEFAULT_MAX_PROGRESS_LINES = 4;
+
+/**
+ * The state index can miss a job's completion update (state-lock contention
+ * at job end is swallowed rather than failing the run). The per-job file is
+ * the source of truth: when the index says "running" but the job file shows a
+ * terminal state, prefer the file and opportunistically repair the index —
+ * otherwise `result` would refuse the finished job forever.
+ */
+function reconcileJobWithStoredFile(workspaceRoot, job) {
+  if (job.status !== "running") {
+    return job;
+  }
+  let stored = null;
+  try {
+    stored = readStoredJob(workspaceRoot, job.id);
+  } catch {
+    return job;
+  }
+  if (!stored?.status || stored.status === "running" || stored.status === "queued") {
+    return job;
+  }
+  const patch = {
+    id: job.id,
+    status: stored.status,
+    phase: stored.phase ?? job.phase ?? null,
+    threadId: stored.threadId ?? job.threadId ?? null,
+    turnId: stored.turnId ?? job.turnId ?? null,
+    pid: null,
+    completedAt: stored.completedAt ?? null,
+    ...(stored.errorMessage ? { errorMessage: stored.errorMessage } : {})
+  };
+  try {
+    upsertJob(workspaceRoot, patch);
+  } catch {
+    // Repair is best-effort; the merged view below is still correct.
+  }
+  return { ...job, ...patch };
+}
+
+function listJobsReconciled(workspaceRoot) {
+  return listJobs(workspaceRoot).map((job) => reconcileJobWithStoredFile(workspaceRoot, job));
+}
 
 export function sortJobsNewestFirst(jobs) {
   return [...jobs].sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
@@ -214,7 +256,7 @@ function matchJobReference(jobs, reference, predicate = () => true) {
 
 export function buildStatusSnapshot(cwd, options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const jobs = sortJobsNewestFirst(filterJobsForCurrentSession(listJobs(workspaceRoot), options));
+  const jobs = sortJobsNewestFirst(filterJobsForCurrentSession(listJobsReconciled(workspaceRoot), options));
   const maxJobs = options.maxJobs ?? DEFAULT_MAX_STATUS_JOBS;
   const maxProgressLines = options.maxProgressLines ?? DEFAULT_MAX_PROGRESS_LINES;
 
@@ -240,7 +282,7 @@ export function buildStatusSnapshot(cwd, options = {}) {
 
 export function buildSingleJobSnapshot(cwd, reference, options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const jobs = sortJobsNewestFirst(listJobs(workspaceRoot));
+  const jobs = sortJobsNewestFirst(listJobsReconciled(workspaceRoot));
   const selected = matchJobReference(jobs, reference);
   if (!selected) {
     throw new Error(`No job found for "${reference}". Run codex-companion status to inspect known jobs.`);
@@ -254,7 +296,7 @@ export function buildSingleJobSnapshot(cwd, reference, options = {}) {
 
 export function resolveResultJob(cwd, reference) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const jobs = sortJobsNewestFirst(reference ? listJobs(workspaceRoot) : filterJobsForCurrentSession(listJobs(workspaceRoot)));
+  const jobs = sortJobsNewestFirst(reference ? listJobsReconciled(workspaceRoot) : filterJobsForCurrentSession(listJobsReconciled(workspaceRoot)));
   const selected = matchJobReference(
     jobs,
     reference,
@@ -279,7 +321,7 @@ export function resolveResultJob(cwd, reference) {
 
 export function resolveCancelableJob(cwd, reference, options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const jobs = sortJobsNewestFirst(listJobs(workspaceRoot));
+  const jobs = sortJobsNewestFirst(listJobsReconciled(workspaceRoot));
   const activeJobs = jobs.filter((job) => job.status === "running");
 
   if (reference) {

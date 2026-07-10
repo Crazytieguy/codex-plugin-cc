@@ -57,8 +57,43 @@ async function main() {
   let activeStream = null;
   // Shape: { socket, threadIds: Set<string>, primaryThreadId: string, turnId: string }
 
+  // The broker owns its own lifetime: SessionEnd hooks are best-effort (they can
+  // fire for sessions that aren't done, or never fire at all for background
+  // sessions), so nothing external tears the broker down. Instead it exits on
+  // its own after sitting idle — no client sockets, no in-flight stream.
+  const idleTimeoutRaw = Number.parseInt(
+    process.env.CODEX_COMPANION_BROKER_IDLE_TIMEOUT_MS ?? "",
+    10
+  );
+  const idleTimeoutMs = Number.isFinite(idleTimeoutRaw) ? idleTimeoutRaw : 30 * 60 * 1000;
+  let idleTimer = null;
+
+  function disarmIdleTimer() {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  }
+
+  function armIdleTimer() {
+    if (idleTimeoutMs <= 0 || idleTimer || sockets.size > 0 || activeStream) {
+      return;
+    }
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      // Re-check: a client may have connected (or a stream started) since the
+      // timer was armed without the disarm having cleared this callback.
+      if (shuttingDown || sockets.size > 0 || activeStream) {
+        return;
+      }
+      shutdown(server).finally(() => process.exit(0));
+    }, idleTimeoutMs);
+    idleTimer.unref();
+  }
+
   function clearActiveStream() {
     activeStream = null;
+    armIdleTimer();
   }
 
   function routeNotification(message) {
@@ -80,6 +115,7 @@ async function main() {
       return;
     }
     shuttingDown = true;
+    disarmIdleTimer();
     for (const socket of sockets) {
       socket.end();
     }
@@ -90,13 +126,33 @@ async function main() {
     }
     if (pidFile && fs.existsSync(pidFile)) {
       fs.unlinkSync(pidFile);
+      // The session dir (a mkdtemp holding pid/log/socket) would otherwise
+      // accumulate one leftover per broker lifetime — nothing external cleans
+      // it when the broker exits on its own. Log removal is safe: our stdio
+      // fd stays valid after unlink.
+      const sessionDir = path.dirname(pidFile);
+      try {
+        fs.unlinkSync(path.join(sessionDir, "broker.log"));
+      } catch {
+        // Log may already be gone.
+      }
+      try {
+        fs.rmdirSync(sessionDir);
+      } catch {
+        // Non-empty or already removed.
+      }
     }
   }
 
   appClient.setNotificationHandler(routeNotification);
 
   const server = net.createServer((socket) => {
+    if (shuttingDown) {
+      socket.destroy();
+      return;
+    }
     sockets.add(socket);
+    disarmIdleTimer();
     socket.setEncoding("utf8");
     let buffer = "";
     let pending = Promise.resolve();
@@ -243,6 +299,7 @@ async function main() {
             .catch(() => {});
         }
       }
+      armIdleTimer();
     }
 
     socket.on("close", handleSocketClose);
@@ -270,6 +327,7 @@ async function main() {
   });
 
   server.listen(listenTarget.path);
+  armIdleTimer();
 }
 
 main().catch((error) => {

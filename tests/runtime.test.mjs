@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildEnv, installFakeCodex } from "./fake-codex-fixture.mjs";
 import { cleanEnv, initGitRepo, makeTempDir, run } from "./helpers.mjs";
-import { loadBrokerSession, saveBrokerSession } from "../plugins/codex/scripts/lib/broker-lifecycle.mjs";
+import { clearBrokerSession, loadBrokerSession, saveBrokerSession } from "../plugins/codex/scripts/lib/broker-lifecycle.mjs";
 import { resolveStateDir } from "../plugins/codex/scripts/lib/state.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -1934,6 +1934,30 @@ test("session end terminates running jobs but preserves all job records", async 
     "utf8"
   );
 
+  // Non-final SessionEnd reasons (supervisor respawn/save, catch-all "other",
+  // or absent) must NOT kill the session's live jobs — the session may resume.
+  for (const nonFinalInput of [
+    { reason: "resume" },
+    { reason: "other" },
+    {}
+  ]) {
+    const skipped = run("node", [SESSION_HOOK, "SessionEnd"], {
+      cwd: repo,
+      env: {
+        ...process.env,
+        CODEX_COMPANION_SESSION_ID: "sess-current"
+      },
+      input: JSON.stringify({
+        hook_event_name: "SessionEnd",
+        session_id: "sess-current",
+        cwd: repo,
+        ...nonFinalInput
+      })
+    });
+    assert.equal(skipped.status, 0, skipped.stderr);
+  }
+  assert.doesNotThrow(() => process.kill(sleeper.pid, 0));
+
   const result = run("node", [SESSION_HOOK, "SessionEnd"], {
     cwd: repo,
     env: {
@@ -1943,7 +1967,8 @@ test("session end terminates running jobs but preserves all job records", async 
     input: JSON.stringify({
       hook_event_name: "SessionEnd",
       session_id: "sess-current",
-      cwd: repo
+      cwd: repo,
+      reason: "prompt_input_exit"
     })
   });
 
@@ -2002,15 +2027,24 @@ test("commands lazily start and reuse one shared app-server after first use", as
   const fakeState = JSON.parse(fs.readFileSync(fakeStatePath, "utf8"));
   assert.equal(fakeState.appServerStarts, 1);
 
+  // Even a final SessionEnd must not tear down the workspace-shared broker —
+  // other sessions may be streaming through it. The broker reaps itself via
+  // its idle timeout instead.
   const cleanup = run("node", [SESSION_HOOK, "SessionEnd"], {
     cwd: repo,
     env,
     input: JSON.stringify({
       hook_event_name: "SessionEnd",
-      cwd: repo
+      cwd: repo,
+      reason: "prompt_input_exit"
     })
   });
   assert.equal(cleanup.status, 0, cleanup.stderr);
+  assert.ok(loadBrokerSession(repo), "broker session record must survive SessionEnd");
+  assert.doesNotThrow(
+    () => process.kill(brokerSession.pid, 0),
+    "broker process must survive SessionEnd"
+  );
 });
 
 test("setup reuses an existing shared app-server without starting another one", () => {
@@ -2087,12 +2121,33 @@ test("status reports shared session runtime when a lazy broker is active", () =>
   assert.match(result.stdout, /Session runtime: shared session/);
 });
 
-test("setup and status honor --cwd when reading shared session runtime", () => {
+test("setup and status honor --cwd when reading shared session runtime", (t) => {
   const targetWorkspace = makeTempDir();
   const invocationWorkspace = makeTempDir();
 
+  // The runtime status liveness-checks the recorded endpoint (socket file
+  // exists) and pid, so the fake broker needs a real socket path and a live
+  // pid — a disposable sleeper, so broker cleanup can safely kill it.
+  const fakeSocketPath = path.join(makeTempDir(), "fake-broker.sock");
+  fs.writeFileSync(fakeSocketPath, "", "utf8");
+  const fakeEndpoint = `unix:${fakeSocketPath}`;
+  const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    detached: true,
+    stdio: "ignore"
+  });
+  sleeper.unref();
+  t.after(() => {
+    clearBrokerSession(targetWorkspace);
+    try {
+      process.kill(sleeper.pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  });
+
   saveBrokerSession(targetWorkspace, {
-    endpoint: "unix:/tmp/fake-broker.sock"
+    endpoint: fakeEndpoint,
+    pid: sleeper.pid
   });
 
   const status = run("node", [SCRIPT, "status", "--cwd", targetWorkspace], {
@@ -2107,5 +2162,5 @@ test("setup and status honor --cwd when reading shared session runtime", () => {
   assert.equal(setup.status, 0, setup.stderr);
   const payload = JSON.parse(setup.stdout);
   assert.equal(payload.sessionRuntime.mode, "shared");
-  assert.equal(payload.sessionRuntime.endpoint, "unix:/tmp/fake-broker.sock");
+  assert.equal(payload.sessionRuntime.endpoint, fakeEndpoint);
 });
