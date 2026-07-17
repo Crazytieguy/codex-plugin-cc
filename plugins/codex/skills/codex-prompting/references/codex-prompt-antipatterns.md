@@ -34,21 +34,6 @@ Better:
 3. Smallest safe next step
 ```
 
-## Missing stop rules
-
-Bad:
-
-```text
-Debug this failure.
-```
-
-Better:
-
-```markdown
-## Stop Rules
-Keep going until the evidence supports a confident root cause. Stop and ask only when a missing detail changes correctness or safety.
-```
-
 ## Asking for more reasoning instead of a better contract
 
 Bad:

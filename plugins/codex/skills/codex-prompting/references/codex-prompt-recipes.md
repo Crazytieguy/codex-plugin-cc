@@ -21,8 +21,7 @@ Diagnose why the failing test or command is breaking in this repository.
 Before finalizing, confirm the proposed root cause matches the observed evidence.
 
 ## Stop Rules
-- Keep going until the evidence supports a confident root cause.
-- Don't guess missing repository facts. If required context is absent, state exactly what remains unknown.
+Don't guess missing repository facts. If required context is absent, state exactly what remains unknown.
 ```
 
 ## Narrow Fix
@@ -46,11 +45,10 @@ Implement the smallest safe fix for the identified issue. Preserve existing beha
 4. Residual risks or follow-ups
 
 ## Verification
-Before finalizing, confirm the fix matches the task requirements and the changed code is coherent. Check whether adjacent code paths share the broken invariant; fix them too or call them out as explicitly out of scope.
+Before finalizing, confirm the fix matches the task requirements and the changed code is coherent. If adjacent code paths share the broken invariant, call them out.
 
 ## Stop Rules
-- Resolve the task fully before stopping. Don't stop after identifying the issue without applying the fix.
-- If a missing detail materially changes correctness, ask. Otherwise proceed on the most reasonable low-risk interpretation.
+If a missing detail materially changes correctness, ask.
 ```
 
 ## Research / Recommendation

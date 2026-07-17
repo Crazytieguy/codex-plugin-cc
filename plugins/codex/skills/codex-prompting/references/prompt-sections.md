@@ -71,15 +71,6 @@ Use when correctness matters.
 Before finalizing, verify the result against the task requirements and the changed files or tool outputs. If a check fails, revise instead of reporting the first draft.
 ```
 
-## Stop Rules: keep going by default
-
-Use when Codex should act without asking routine questions.
-
-```markdown
-## Stop Rules
-Default to the most reasonable low-risk interpretation and keep going. Only stop to ask when a missing detail changes correctness, safety, or an irreversible action.
-```
-
 ## Stop Rules: gate on missing context
 
 Use when Codex might otherwise guess.

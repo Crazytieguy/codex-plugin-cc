@@ -2,7 +2,8 @@
 
 ## 1.0.22
 
-- Updated `codex-prompting` guidance for gpt-5.6-sol: constraints must be explicit (Sol treats silence as permission), simplified reasoning-effort guidance (defer to the user's configured default; mostly `medium` or `high`), strengthened the action-safety constraints template with a no-near-match rule. Review prompts unchanged — their grounding and evidence rules already counter Sol's fabrication tendencies.
+- Updated `codex-prompting` guidance for gpt-5.6-sol: constraints must be explicit (Sol treats silence as permission), simplified reasoning-effort guidance (defer to the user's configured default; mostly `medium` or `high`), strengthened action-safety constraints with a no-near-match rule, and removed keep-going/anti-laziness language throughout — Stop Rules are now optional early-stop gates.
+- Reduced findings-pressure in the review prompts for gpt-5.6-sol's pedantry tendencies: trimmed "don't validate" role clauses, symmetric approve/needs-attention rule, materiality bar for races and edge cases, and an approval-default `plan-review-followup` re-check scoped to prior [P0]/[P1] findings.
 - `--effort` now accepts `max`; `minimal` dropped from the docs (still accepted for older models).
 
 ## 1.0.18

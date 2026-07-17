@@ -25,7 +25,7 @@ Use Markdown section headings. Skip any section that doesn't add value.
 - `## Grounding` (optional) — required for review or research; how claims must be supported.
 - `## Output` — exact shape, ordering, brevity. Schema or numbered list.
 - `## Verification` (optional) — required for code edits or risky fixes; what to re-check before finalizing.
-- `## Stop Rules` — when to keep going vs ask.
+- `## Stop Rules` (optional) — early-stop conditions: when to end the run and report instead of acting.
 
 XML tags inside a section are fine for wrapping multi-line payloads (diffs, logs, schemas). Section headings stay Markdown.
 
@@ -41,7 +41,7 @@ XML tags inside a section are fine for wrapping multi-line payloads (diffs, logs
 
 ## Reasoning Effort
 
-Leave `--effort` unset to use the user's configured default. When setting it explicitly, `medium` covers most tasks and `high` fits genuinely hard ones — ambiguous debugging, large multi-file changes, deep research. `low` suits quick mechanical work; `xhigh` and `max` are rarely worth the cost. Tighten the contract before raising effort.
+Leave `--effort` unset to use the user's configured default. When setting it explicitly, `medium` covers most tasks and `high` fits genuinely hard ones — ambiguous debugging, large multi-file changes, deep research. `low` suits quick mechanical work; `xhigh` and `max` are rarely worth the cost.
 
 Leave `--model` unset — the user's Codex default (gpt-5.6-sol for most) suits nearly every task.
 
@@ -52,7 +52,7 @@ Leave `--model` unset — the user's Codex default (gpt-5.6-sol for most) suits 
 3. Pick the smallest `## Output` shape that's still easy to consume.
 4. Add `## Constraints` only for real risks (scope creep, irreversible action).
 5. Add `## Grounding` and/or `## Verification` only when the task can drift or break.
-6. Decide `## Stop Rules`: default to keep-going unless something is irreversible or correctness-changing.
+6. Add `## Stop Rules` only when something is irreversible or a missing detail changes correctness.
 7. Re-read and cut redundant lines.
 
 ## References

@@ -1,10 +1,9 @@
 ## Goal
-The plan below has been revised since your last review. Approve unless a prior finding remains unaddressed or the changes introduce a material new issue.
+The plan below has been revised since your last review. This is a re-check, not a fresh review: verify each [P0] and [P1] finding from your prior review was addressed. Approve unless one remains unaddressed or a revision introduced a new [P0] defect.
 
 ## Output
-Lead with unresolved findings from the prior review, then new findings, then a brief overall assessment.
-Prefix each finding with [P0] or [P1] — skip [P2] nitpicks.
-If all prior findings were addressed and no new material issues exist, say so directly.
+If nothing blocks approval, approve in one or two sentences — don't re-review the rest of the plan.
+Otherwise, quote each unaddressed finding or new defect and state what's missing.
 
 <plan_content>
 {{PLAN_CONTENT}}
