@@ -29,7 +29,7 @@ Use for write-capable or potentially broad tasks.
 ## Constraints
 - Keep changes tightly scoped to the stated task.
 - No unrelated refactors, renames, or cleanup unless they are required for correctness.
-- Call out any risky or irreversible action before taking it.
+- Stop and ask before any destructive or irreversible action. If something the task names (a file, function, resource) doesn't exist as described, report the mismatch — don't act on a near-match.
 ```
 
 ## Grounding

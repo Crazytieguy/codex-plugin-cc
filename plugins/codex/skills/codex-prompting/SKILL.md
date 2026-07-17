@@ -5,7 +5,7 @@ description: This skill should be used when delegating a task to Codex via `code
 
 # Codex Prompting
 
-Prompt Codex outcome-first. Describe the destination, success criteria, evidence rules, and output shape; let Codex pick the path. Be terse — Codex follows instructions literally, so verbose hedging hurts.
+Prompt Codex outcome-first. Describe the destination, success criteria, evidence rules, and output shape; let Codex pick the path. Be terse but explicit — Codex follows instructions literally and treats silence as permission, so state the constraints you care about and cut everything else.
 
 ## When to use
 
@@ -32,7 +32,7 @@ XML tags inside a section are fine for wrapping multi-line payloads (diffs, logs
 ## Core Rules
 
 - Outcome-first. State the destination, evidence rules, and success criteria. Avoid step-by-step procedure unless the path itself is part of the contract.
-- Be terse and literal. Codex follows instructions more literally than older models — verbose hedging narrows the search space.
+- Make constraints explicit. Codex reads instructions literally and permissively: anything not forbidden is treated as allowed. Don't rely on it inferring unstated scope limits.
 - Reserve `ALWAYS` / `NEVER` for genuine invariants (safety, required output fields, hard contract guarantees). Use scoped "if X then Y" elsewhere.
 - One clear task per run. Split unrelated asks into separate runs.
 - Tighten the contract before raising effort. Higher reasoning is not automatically better; the model can over-search.
@@ -41,16 +41,9 @@ XML tags inside a section are fine for wrapping multi-line payloads (diffs, logs
 
 ## Reasoning Effort
 
-`--effort` defaults to `medium`. Adjust deliberately:
+Leave `--effort` unset to use the user's configured default. When setting it explicitly, `medium` covers most tasks and `high` fits genuinely hard ones — ambiguous debugging, large multi-file changes, deep research. `low` suits quick mechanical work; `xhigh` and `max` are rarely worth the cost. Tighten the contract before raising effort.
 
-- `low` — quick lookups, mechanical edits, well-scoped fixes.
-- `medium` (default) — most diagnosis, review, and implementation.
-- `high` / `xhigh` — hard multi-file refactors, ambiguous debugging, deep research. Use sparingly.
-- `minimal` / `none` — only when you've proved `medium` is wasteful for this shape of task.
-
-Rule: tighten the contract before raising effort.
-
-For model selection, leave `--model` unset — Codex picks a sensible default per task type.
+Leave `--model` unset — the user's Codex default (gpt-5.6-sol for most) suits nearly every task.
 
 ## Prompt Assembly Checklist
 
