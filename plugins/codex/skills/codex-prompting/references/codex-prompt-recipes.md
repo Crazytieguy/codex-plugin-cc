@@ -36,7 +36,8 @@ Implement the smallest safe fix for the identified issue. Preserve existing beha
 ## Constraints
 - Keep changes tightly scoped to the stated fix.
 - No unrelated refactors, renames, or cleanup.
-- Call out any risky or irreversible action before taking it.
+- Stop and ask before any destructive or irreversible action (deleting files, dropping or migrating data, force operations, history rewrites).
+- If something the task names (a file, test, resource) can't be found, stop and report it — never act on a near-match or substitute target.
 
 ## Output
 1. Summary of the fix
