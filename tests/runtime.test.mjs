@@ -570,6 +570,65 @@ test("session start hook exports the Claude session id and plugin data dir for l
   assert.match(envContent, /PATH=/);
 });
 
+// Resume and fork both preserve the conversation transcript (fork copies it,
+// resume reuses it), so neither should re-emit the status systemMessage or
+// help-text additionalContext — but both still need the env/PATH writes since
+// a fork/rewind gets a new session id and a fresh empty env dir.
+for (const source of ["resume", "fork"]) {
+  test(`session start hook writes session env but emits no status output for source=${source}`, () => {
+    const repo = makeTempDir();
+    const envFile = path.join(makeTempDir(), "claude-env.sh");
+    fs.writeFileSync(envFile, "", "utf8");
+    const pluginDataDir = makeTempDir();
+
+    const result = run("node", [SESSION_HOOK, "SessionStart"], {
+      cwd: repo,
+      env: cleanEnv({
+        CLAUDE_ENV_FILE: envFile,
+        CLAUDE_PLUGIN_DATA: pluginDataDir
+      }),
+      input: JSON.stringify({
+        hook_event_name: "SessionStart",
+        session_id: "sess-current",
+        cwd: repo,
+        source
+      })
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envContent = fs.readFileSync(envFile, "utf8");
+    assert.match(envContent, /CODEX_COMPANION_SESSION_ID='sess-current'/);
+    assert.match(envContent, new RegExp(`CODEX_COMPANION_DATA_DIR='${pluginDataDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+    assert.match(envContent, /PATH=/);
+    assert.equal(result.stdout, "");
+  });
+}
+
+test("session start hook emits status output on stdout for source=startup", () => {
+  const repo = makeTempDir();
+  const envFile = path.join(makeTempDir(), "claude-env.sh");
+  fs.writeFileSync(envFile, "", "utf8");
+  const pluginDataDir = makeTempDir();
+
+  const result = run("node", [SESSION_HOOK, "SessionStart"], {
+    cwd: repo,
+    env: cleanEnv({
+      CLAUDE_ENV_FILE: envFile,
+      CLAUDE_PLUGIN_DATA: pluginDataDir
+    }),
+    input: JSON.stringify({
+      hook_event_name: "SessionStart",
+      session_id: "sess-current",
+      cwd: repo,
+      source: "startup"
+    })
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.notEqual(result.stdout, "");
+  assert.match(result.stdout, /"systemMessage":/);
+});
+
 test("write task output focuses on the Codex result without generic follow-up hints", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
