@@ -6,18 +6,11 @@ Find defensible reasons this change should not ship yet.
 User focus: {{USER_FOCUS}}
 
 ## Attack Surface
-Weight failures that are expensive, dangerous, or hard to detect:
-- auth, permissions, tenant isolation, trust boundaries
-- data loss, corruption, duplication, irreversible state changes
-- rollback safety, retries, partial failure, idempotency
-- races, ordering, stale state, re-entrancy
-- empty-state, null, timeout, degraded dependencies
-- version skew, schema drift, migrations, compatibility
-- observability gaps that hide failure
+Weight findings by how expensive or dangerous the failure would be, and how easily it would be detected before causing damage.
 
 ## Finding Bar
 Report only material findings. Skip style, naming, low-value cleanup, and speculation.
-Races and edge cases count only with a realistic trigger and consequence, not a theoretical interleaving.
+Every finding needs a realistic trigger and a concrete consequence — not a theoretical edge case.
 Each finding answers: what goes wrong, why this path is vulnerable, likely impact, concrete fix.
 
 ## Grounding
