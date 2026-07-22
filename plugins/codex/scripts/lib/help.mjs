@@ -1,6 +1,9 @@
 export function getUsageText() {
   return `codex-companion — Codex reviews and tasks from Claude Code.
 Always start codex reviews and tasks via the Monitor tool, not Bash.
+Long runs warn on stdout when Codex has been silent for 3 minutes — the run
+keeps going; you decide whether to wait, cancel, or tell the user. Tune with
+CODEX_COMPANION_STALL_WARN_MS / CODEX_COMPANION_STALL_REPEAT_MS (0 disables).
 
 codex-companion subcommands:
 

@@ -164,6 +164,14 @@ function emitTurnCompletedLater(threadId, turnId, item, delayMs) {
   }, delayMs);
 }
 
+function emitReviewItems(threadId, turnId, item) {
+  if (BEHAVIOR === "stalled-review") {
+    emitTurnCompletedLater(threadId, turnId, item, 1500);
+    return;
+  }
+  emitTurnCompleted(threadId, turnId, item);
+}
+
 function nativeReviewText(target) {
   if (target.type === "baseBranch") {
     return "Reviewed changes against " + target.branch + ".\\nNo material issues found.";
@@ -269,11 +277,17 @@ rl.on("line", (line) => {
 
   try {
     switch (message.method) {
-      case "initialize":
+      case "initialize": {
         state.capabilities = message.params.capabilities || null;
         saveState(state);
-        send({ id: message.id, result: { userAgent: "fake-codex-app-server" } });
+        const initReply = () => send({ id: message.id, result: { userAgent: "fake-codex-app-server" } });
+        if (BEHAVIOR === "stalled-initialize") {
+          setTimeout(initReply, 1200);
+        } else {
+          initReply();
+        }
         break;
+      }
 
       case "initialized":
         break;
@@ -320,7 +334,12 @@ rl.on("line", (line) => {
           threads = threads.filter((thread) => (thread.name || "").includes(message.params.searchTerm));
         }
         threads.sort((left, right) => right.updatedAt - left.updatedAt);
-        send({ id: message.id, result: { data: threads.map(buildThread), nextCursor: null } });
+        const listReply = () => send({ id: message.id, result: { data: threads.map(buildThread), nextCursor: null } });
+        if (BEHAVIOR === "stalled-thread-list") {
+          setTimeout(listReply, 1500);
+        } else {
+          listReply();
+        }
         break;
       }
 
@@ -344,7 +363,7 @@ rl.on("line", (line) => {
         }
         const turnId = nextTurnId(state);
         send({ id: message.id, result: { turn: buildTurn(turnId), reviewThreadId: reviewThread.id } });
-        emitTurnCompleted(reviewThread.id, turnId, [
+        emitReviewItems(reviewThread.id, turnId, [
           {
             started: { type: "enteredReviewMode", id: turnId, review: "current changes" }
           },
@@ -533,6 +552,8 @@ rl.on("line", (line) => {
 	          interruptibleTurns.set(turnId, { threadId: thread.id, timer });
 	        } else if (BEHAVIOR === "slow-task") {
 	          emitTurnCompletedLater(thread.id, turnId, items, 400);
+	        } else if (BEHAVIOR === "stalled-task") {
+	          emitTurnCompletedLater(thread.id, turnId, items, 1500);
 	        } else {
 	          emitTurnCompleted(thread.id, turnId, items);
 	        }

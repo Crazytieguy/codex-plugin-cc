@@ -128,6 +128,10 @@ class AppServerClientBase {
       return;
     }
 
+    // Every protocol message counts as liveness — notifications, server
+    // requests, and responses (labelled by their originating request).
+    this.options.onActivity?.(message.method ?? this.pending.get(message.id)?.method ?? null);
+
     if (message.id !== undefined && message.method) {
       this.handleServerRequest(message);
       return;
@@ -356,6 +360,9 @@ export class CodexAppServerClient {
     const client = brokerEndpoint
       ? new BrokerCodexAppServerClient(cwd, { ...options, brokerEndpoint })
       : new SpawnedCodexAppServerClient(cwd, options);
+    // Before initialize: a stall during the handshake itself must already be
+    // attributed to this client's transport (see stall-watchdog.mjs).
+    options.onClient?.(client);
     await client.initialize();
     return client;
   }

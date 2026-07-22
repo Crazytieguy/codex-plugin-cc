@@ -52,6 +52,10 @@ export interface CodexAppServerClientOptions {
   brokerEndpoint?: string;
   disableBroker?: boolean;
   reuseExistingBroker?: boolean;
+  /** Invoked with the selected client before `initialize` is awaited. */
+  onClient?: (client: unknown) => void;
+  /** Invoked for every protocol message received; `label` is the method name. */
+  onActivity?: (label: string | null) => void;
 }
 
 export interface AppServerMethodMap {

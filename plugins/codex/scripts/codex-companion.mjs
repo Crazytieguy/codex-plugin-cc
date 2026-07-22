@@ -48,6 +48,7 @@ import {
   runTrackedJob,
   SESSION_ID_ENV
 } from "./lib/tracked-jobs.mjs";
+import { createStallWatchdog } from "./lib/stall-watchdog.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 import {
   renderNativeReviewResult,
@@ -302,7 +303,7 @@ async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
   };
 }
 
-async function resolveLatestTrackedTaskThread(workspaceRoot, jobs) {
+async function resolveLatestTrackedTaskThread(workspaceRoot, jobs, watchdog = null) {
   const sessionId = getCurrentClaudeSessionId();
   const sortedJobs = sortJobsNewestFirst(jobs);
   const visibleJobs = filterJobsForCurrentClaudeSession(sortedJobs);
@@ -320,7 +321,7 @@ async function resolveLatestTrackedTaskThread(workspaceRoot, jobs) {
     return null;
   }
 
-  return findLatestTaskThread(workspaceRoot);
+  return findLatestTaskThread(workspaceRoot, { watchdog });
 }
 
 function resolveTrackedTaskThreadById(jobs, jobId) {
@@ -371,7 +372,8 @@ async function executeReviewRun(request) {
     const result = await runAppServerReview(request.cwd, {
       target: reviewTarget,
       model: request.model,
-      onProgress: request.onProgress
+      onProgress: request.onProgress,
+      watchdog: request.watchdog
     });
     const payload = {
       review: reviewName,
@@ -414,7 +416,8 @@ async function executeReviewRun(request) {
     model: request.model,
     sandbox: "read-only",
     outputSchema: readOutputSchema(REVIEW_SCHEMA),
-    onProgress: request.onProgress
+    onProgress: request.onProgress,
+    watchdog: request.watchdog
   });
   const parsed = parseStructuredOutput(result.finalMessage, {
     status: result.status,
@@ -481,6 +484,7 @@ async function executeTaskRun(request) {
     effort: request.effort,
     sandbox: request.write ? "workspace-write" : "read-only",
     onProgress: request.onProgress,
+    watchdog: request.watchdog,
     persistThread: true,
     threadName: resumeThreadId ? null : buildPersistentTaskThreadName(request.prompt || DEFAULT_CONTINUE_PROMPT)
   });
@@ -613,7 +617,19 @@ async function runForegroundCommand(job, runner, options = {}) {
   const { logFile, progress } = createTrackedProgress(job, {
     logFile: options.logFile
   });
-  const execution = await runTrackedJob(job, () => runner(progress), { logFile });
+  // Stall warnings go to stdout so they surface as Monitor notifications;
+  // --json runs keep stdout as pure JSON and warn only into the job log.
+  const watchdog = createStallWatchdog({
+    jobId: job.id,
+    logFile,
+    quiet: Boolean(options.json)
+  });
+  let execution;
+  try {
+    execution = await runTrackedJob(job, () => runner(progress, watchdog), { logFile });
+  } finally {
+    watchdog.stop();
+  }
   outputResult(options.json ? execution.payload : execution.rendered, options.json);
   if (execution.exitStatus !== 0) {
     process.exitCode = execution.exitStatus;
@@ -655,6 +671,7 @@ async function executePlanReviewRun(request) {
     model: request.model,
     sandbox: "read-only",
     onProgress: request.onProgress,
+    watchdog: request.watchdog,
     persistThread: true,
     threadName: request.resumeThreadId ? null : buildPersistentPlanReviewThreadName(relativePath)
   });
@@ -731,14 +748,15 @@ async function handlePlanReview(argv) {
 
   await runForegroundCommand(
     job,
-    (progress) =>
+    (progress, watchdog) =>
       executePlanReviewRun({
         cwd,
         model,
         planFile: resolvedPath,
         planContent,
         resumeThreadId,
-        onProgress: progress
+        onProgress: progress,
+        watchdog
       })
   );
 }
@@ -772,7 +790,7 @@ async function handleReviewCommand(argv, config) {
   });
   await runForegroundCommand(
     job,
-    (progress) =>
+    (progress, watchdog) =>
       executeReviewRun({
         cwd,
         base: options.base,
@@ -781,7 +799,8 @@ async function handleReviewCommand(argv, config) {
         focusText,
         reviewName: config.reviewName,
         includeReasoning: Boolean(options["include-reasoning"]),
-        onProgress: progress
+        onProgress: progress,
+        watchdog
       }),
     { json: options.json }
   );
@@ -826,39 +845,53 @@ async function handleTask(argv) {
   const write = Boolean(options.write);
 
   let targetThreadId = null;
-  if (resumeJobId || resumeLast) {
+  if (resumeJobId) {
     const jobs = listJobs(workspaceRoot);
-    if (resumeJobId) {
-      targetThreadId = resolveTrackedTaskThreadById(jobs, resumeJobId);
-    } else {
-      const latestThread = await resolveLatestTrackedTaskThread(workspaceRoot, jobs);
-      if (!latestThread) {
-        throw new Error("No previous Codex task thread was found for this repository.");
-      }
-      targetThreadId = latestThread.id;
-    }
+    targetThreadId = resolveTrackedTaskThreadById(jobs, resumeJobId);
     assertNoConflictingActiveResume(jobs, targetThreadId);
   }
 
   const taskMetadata = buildTaskRunMetadata({
     prompt,
-    resume: Boolean(targetThreadId)
+    resume: Boolean(targetThreadId) || resumeLast
   });
 
   const job = buildTaskJob(workspaceRoot, taskMetadata, write, targetThreadId);
   await runForegroundCommand(
     job,
-    (progress) =>
-      executeTaskRun({
+    async (progress, watchdog) => {
+      let resolvedThreadId = targetThreadId;
+      if (!resolvedThreadId && resumeLast) {
+        // Resume-last discovery may open an app-server connection, so it runs
+        // inside the tracked job: its watchdog covers a stalled handshake or
+        // thread/list (into the job log under --json), and the warning's
+        // status/cancel hints point at a job that actually exists. The scan
+        // must ignore this job's own freshly-written "running" record.
+        const jobs = listJobs(workspaceRoot).filter((candidate) => candidate.id !== job.id);
+        const latestThread = await resolveLatestTrackedTaskThread(workspaceRoot, jobs, watchdog);
+        if (!latestThread) {
+          throw new Error("No previous Codex task thread was found for this repository.");
+        }
+        resolvedThreadId = latestThread.id;
+        assertNoConflictingActiveResume(jobs, resolvedThreadId);
+        try {
+          upsertJob(workspaceRoot, { id: job.id, targetThreadId: resolvedThreadId });
+        } catch {
+          // Conflict-detection metadata only — never fail the run over it.
+        }
+      }
+      return executeTaskRun({
         cwd,
         model,
         effort,
         prompt,
         write,
-        targetThreadId,
+        targetThreadId: resolvedThreadId,
         jobId: job.id,
-        onProgress: progress
-      }),
+        onProgress: progress,
+        watchdog
+      });
+    },
     { json: options.json }
   );
 }

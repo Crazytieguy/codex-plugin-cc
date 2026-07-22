@@ -599,10 +599,20 @@ async function captureTurn(client, threadId, startRequest, options = {}) {
   }
 }
 
-async function withAppServer(cwd, fn) {
+function buildWatchdogConnectOptions(watchdog) {
+  if (!watchdog) {
+    return {};
+  }
+  return {
+    onClient: (client) => watchdog.start(client.transport),
+    onActivity: (label) => watchdog.touch(label)
+  };
+}
+
+async function withAppServer(cwd, fn, connectOptions = {}) {
   let client = null;
   try {
-    client = await CodexAppServerClient.connect(cwd);
+    client = await CodexAppServerClient.connect(cwd, connectOptions);
     const result = await fn(client);
     await client.close();
     return result;
@@ -625,7 +635,7 @@ async function withAppServer(cwd, fn) {
       throw error;
     }
 
-    const directClient = await CodexAppServerClient.connect(cwd, { disableBroker: true });
+    const directClient = await CodexAppServerClient.connect(cwd, { ...connectOptions, disableBroker: true });
     try {
       return await fn(directClient);
     } finally {
@@ -970,6 +980,7 @@ export async function runAppServerReview(cwd, options = {}) {
     throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, then rerun `/codex:setup`.");
   }
 
+  const connectOptions = buildWatchdogConnectOptions(options.watchdog);
   return withAppServer(cwd, async (client) => {
     emitProgress(options.onProgress, "Starting Codex review thread.", "starting");
     const thread = await startThread(client, cwd, {
@@ -1017,7 +1028,7 @@ export async function runAppServerReview(cwd, options = {}) {
       error: turnState.error,
       stderr: cleanCodexStderr(client.stderr)
     };
-  });
+  }, connectOptions);
 }
 
 export async function runAppServerTurn(cwd, options = {}) {
@@ -1026,6 +1037,7 @@ export async function runAppServerTurn(cwd, options = {}) {
     throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, then rerun `/codex:setup`.");
   }
 
+  const connectOptions = buildWatchdogConnectOptions(options.watchdog);
   return withAppServer(cwd, async (client) => {
     let threadId;
 
@@ -1084,10 +1096,10 @@ export async function runAppServerTurn(cwd, options = {}) {
       touchedFiles: collectTouchedFiles(turnState.fileChanges),
       commandExecutions: turnState.commandExecutions
     };
-  });
+  }, connectOptions);
 }
 
-export async function findLatestTaskThread(cwd) {
+export async function findLatestTaskThread(cwd, options = {}) {
   const availability = getCodexAvailability(cwd);
   if (!availability.available) {
     throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, then rerun `/codex:setup`.");
@@ -1106,7 +1118,7 @@ export async function findLatestTaskThread(cwd) {
       response.data.find((thread) => typeof thread.name === "string" && thread.name.startsWith(TASK_THREAD_PREFIX)) ??
       null
     );
-  });
+  }, buildWatchdogConnectOptions(options.watchdog));
 }
 
 export function buildPersistentTaskThreadName(prompt) {
