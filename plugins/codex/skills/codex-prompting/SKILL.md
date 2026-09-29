@@ -5,7 +5,7 @@ description: This skill should be used when delegating a task to Codex via `code
 
 # Codex Prompting
 
-Prompt Codex outcome-first. Describe the destination, success criteria, evidence rules, and output shape; let Codex pick the path. Be terse but explicit — Codex follows instructions literally and treats silence as permission, so state the constraints you care about and cut everything else.
+Prompt Codex outcome-first. Describe the destination, success criteria, evidence rules, and output shape; let Codex pick the path. Be terse but explicit — Codex follows instructions literally, so state what counts as done and the constraints you care about, and cut everything else.
 
 ## When to use
 
@@ -32,7 +32,8 @@ XML tags inside a section are fine for wrapping multi-line payloads (diffs, logs
 ## Core Rules
 
 - Outcome-first. State the destination, evidence rules, and success criteria. Avoid step-by-step procedure unless the path itself is part of the contract.
-- Make constraints explicit. Codex reads instructions literally and permissively: anything not forbidden is treated as allowed. Don't rely on it inferring unstated scope limits.
+- Define done. Codex can stop at a first implementation and hand it back for review. A task run can't pause for your input, so a question ends the run. State whether done includes running, checking, and fixing the result, and whether ambiguous points are Codex's to decide or to report back after finishing the work that's already clear.
+- Make constraints explicit. Codex reads instructions literally and can go past the ask on long runs. Don't rely on it inferring unstated scope limits.
 - Reserve `ALWAYS` / `NEVER` for genuine invariants (safety, required output fields, hard contract guarantees). Use scoped "if X then Y" elsewhere.
 - One clear task per run. Split unrelated asks into separate runs.
 - Tighten the contract before raising effort. Higher reasoning is not automatically better; the model can over-search.

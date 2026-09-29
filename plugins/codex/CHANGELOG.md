@@ -3,6 +3,7 @@
 ## 1.0.25
 
 - Review prompts gain an Independence rule, ported from the gpt-6-astra-tuned reviewer agents: claims in the `adversarial-review` focus text or in a reviewed plan are verified against the repository rather than trusted, while user-relayed requirements and decisions are taken as given. The `plan-review-followup` re-check verifies fixes against the revised plan and repository, not the plan's own claim.
+- `codex-prompting` updated for gpt-6-astra per OpenAI's guidance: Astra can stop at a first implementation and hand back for review (unlike Sol, which over-persisted), so a new "Define done" rule asks Claude to state whether done includes running/checking/fixing and whether ambiguities are Codex's to decide or to report. The "treats silence as permission" framing is replaced with the observed failure mode — going past the ask on long runs.
 - `--effort` now accepts `ultra`.
 - Removed the `spark` model alias — gpt-5.3-codex-spark is no longer offered by Codex. Pass model slugs directly.
 - Fixed a type error in `app-server.mjs` that failed `npm run build`.
