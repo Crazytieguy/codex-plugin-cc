@@ -177,8 +177,9 @@ class AppServerClientBase {
       // Mark connection-level failures so withAppServer can distinguish "the
       // broker went away" (retry against a direct app-server — it can exit at
       // any moment by design, e.g. its idle timeout) from RPC-level errors.
-      rejection.connectionLost = true;
-      rejection.transport = this.transport;
+      const marked = /** @type {Error & { connectionLost?: boolean, transport?: string }} */ (rejection);
+      marked.connectionLost = true;
+      marked.transport = this.transport;
     }
     for (const pending of this.pending.values()) {
       pending.reject(rejection);

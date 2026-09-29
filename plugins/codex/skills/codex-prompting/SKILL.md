@@ -41,9 +41,9 @@ XML tags inside a section are fine for wrapping multi-line payloads (diffs, logs
 
 ## Reasoning Effort
 
-Leave `--effort` unset to use the user's configured default. When setting it explicitly, `medium` covers most tasks and `high` fits genuinely hard ones — ambiguous debugging, large multi-file changes, deep research. `low` suits quick mechanical work; `xhigh` and `max` are rarely worth the cost.
+Leave `--effort` unset to use the user's configured default. When setting it explicitly, `medium` covers most tasks and `high` fits genuinely hard ones — ambiguous debugging, large multi-file changes, deep research. `low` suits quick mechanical work; `xhigh`, `max`, and `ultra` are rarely worth the cost.
 
-Leave `--model` unset — the user's Codex default (gpt-5.6-sol for most) suits nearly every task.
+Leave `--model` unset — the user's Codex default suits nearly every task.
 
 ## Prompt Assembly Checklist
 

@@ -65,8 +65,7 @@ const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const REVIEW_SCHEMA = path.join(ROOT_DIR, "schemas", "review-output.schema.json");
 const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
 const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
-const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
-const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
+const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 
 import { getUsageText, getCommandHelp } from "./lib/help.mjs";
 
@@ -94,7 +93,7 @@ function normalizeRequestedModel(model) {
   if (!normalized) {
     return null;
   }
-  return MODEL_ALIASES.get(normalized.toLowerCase()) ?? normalized;
+  return normalized;
 }
 
 function normalizeReasoningEffort(effort) {
@@ -107,7 +106,7 @@ function normalizeReasoningEffort(effort) {
   }
   if (!VALID_REASONING_EFFORTS.has(normalized)) {
     throw new Error(
-      `Unsupported reasoning effort "${effort}". Use one of: none, low, medium, high, xhigh, max.`
+      `Unsupported reasoning effort "${effort}". Use one of: none, low, medium, high, xhigh, max, ultra.`
     );
   }
   return normalized;

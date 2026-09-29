@@ -92,8 +92,7 @@ Options:
                      job was created in a different Claude session).
   --resume-last      Continue the most recent Codex task thread for this session.
   --model <model>    Choose a model. Usually leave unset for Codex defaults.
-                     Use "spark" for gpt-5.3-codex-spark.
-  --effort <level>   Reasoning effort: none, low, medium, high, xhigh, max.
+  --effort <level>   Reasoning effort: none, low, medium, high, xhigh, max, ultra.
   --prompt-file <path>  Read task prompt from a file.
   --json             Output structured JSON (includes jobId).`,
 

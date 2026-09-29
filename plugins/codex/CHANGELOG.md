@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.25
+
+- Review prompts gain an Independence rule, ported from the gpt-6-astra-tuned reviewer agents: claims in the `adversarial-review` focus text or in a reviewed plan are verified against the repository rather than trusted, while user-relayed requirements and decisions are taken as given. The `plan-review-followup` re-check verifies fixes against the revised plan and repository, not the plan's own claim.
+- `--effort` now accepts `ultra`.
+- Removed the `spark` model alias — gpt-5.3-codex-spark is no longer offered by Codex. Pass model slugs directly.
+- Fixed a type error in `app-server.mjs` that failed `npm run build`.
+
 ## 1.0.24
 
 - Added a non-fatal stall watchdog to foreground runs (`review`, `adversarial-review`, `plan-review`, `task`): when the Codex app-server sends no protocol messages for 3 minutes (`CODEX_COMPANION_STALL_WARN_MS`, 0 disables), `codex-companion` emits a warning line on stdout — surfacing as a Monitor notification to Claude — and keeps waiting, repeating every 10 minutes (`CODEX_COMPANION_STALL_REPEAT_MS`). The warning names the silent duration, last event, transport, and job id, with status/cancel hints; `--json` runs log the warning to the job log instead of stdout. Motivated by a WSL report of Codex hanging indefinitely with no diagnostics.
